@@ -283,6 +283,188 @@ class SkipExistingInTestCase(unittest.TestCase):
         self.assertEqual(len(qgraph), 1)
 
 
+class RetainedDatasetTypesTestCase(unittest.TestCase):
+    """Tests for QuantumGraphBuilder.retained_dataset_types.
+
+    dataset_auto0 -> task_auto1 -> dataset_auto1 -> task_auto2
+    """
+
+    def setUp(self):
+        self.helper = InMemoryRepo()
+        self.enterContext(self.helper)
+        self.helper.add_task()
+        self.helper.add_task()
+        self.helper.make_quantum_graph_builder(output_run="new_run")
+        self.helper.butler.collections.register("prior_run")
+        self._task1 = self.helper.pipeline_graph.tasks["task_auto1"]
+        self._task2 = self.helper.pipeline_graph.tasks["task_auto2"]
+        self._empty_data_id = DataCoordinate.make_empty(self.helper.butler.dimensions)
+
+    def _insert(self, *names, run="prior_run"):
+        """Register datasets with empty data IDs into a run collection."""
+        for name in names:
+            dt = self.helper.pipeline_graph.dataset_types[name].dataset_type
+            self.helper.butler.registry.insertDatasets(dt, [self._empty_data_id], run=run)
+
+    def _build(self, *, output_run="new_run", **kwargs):
+        return AllDimensionsQuantumGraphBuilder(
+            self.helper.pipeline_graph,
+            self.helper.butler,
+            input_collections=[self.helper.input_chain],
+            output_run=output_run,
+            **kwargs,
+        ).build(attach_datastore_records=False)
+
+    def test_raises_without_skip_existing_in(self):
+        """retained_dataset_types invalid without skip_existing_in."""
+        with self.assertRaises(ValueError):
+            self._build(retained_dataset_types=["dataset_auto1"])
+
+    def test_ancestor_unskipped_when_output_not_retained(self):
+        """task1 ran (metadata present) but did not retain its output;
+        task2 must run.  Because dataset_auto1 is not retained, task1
+        is unskipped to regenerate it.
+        """
+        # task1 succeeded previously, but dataset_auto1 not retained.
+        self._insert(self._task1.metadata_output.parent_dataset_type_name)
+        qgraph = self._build(
+            skip_existing_in=["prior_run"],
+            retained_dataset_types=["*_metadata"],
+        )
+        # Both tasks run: task1 regenerate dataset_auto1 for task2.
+        self.assertEqual(len(qgraph), 2)
+
+    def test_ancestor_not_unskipped_when_output_retained(self):
+        """When the intermediate output is declared retained and is present in
+        skip_existing_in, unskipping stops there and task1 remains skipped.
+        """
+        # task1 metadata and its output dataset_auto1 both present in
+        # prior_run.
+        self._insert(self._task1.metadata_output.parent_dataset_type_name)
+        self._insert("dataset_auto1")
+        for edge in self._task1.init.iter_all_outputs():
+            self._insert(edge.parent_dataset_type_name)
+        qgraph = self._build(
+            skip_existing_in=["prior_run"],
+            retained_dataset_types=["dataset_auto1", "*_metadata"],
+        )
+        # Only task2 runs.
+        self.assertEqual(len(qgraph), 1)
+
+    def test_both_skipped_when_both_have_metadata(self):
+        """When both tasks have metadata, both remain skipped regardless of
+        which outputs are not retained.
+        """
+        self._insert(self._task1.metadata_output.parent_dataset_type_name)
+        self._insert(self._task2.metadata_output.parent_dataset_type_name)
+        for edge in self._task1.init.iter_all_outputs():
+            self._insert(edge.parent_dataset_type_name)
+        for edge in self._task2.init.iter_all_outputs():
+            self._insert(edge.parent_dataset_type_name)
+        qgraph = self._build(
+            skip_existing_in=["prior_run"],
+            retained_dataset_types=["*_metadata"],
+        )
+        self.assertEqual(len(qgraph), 0)
+
+    def test_unrecognised_pattern_warns(self):
+        """Literal names and wildcard patterns that match nothing in the
+        pipeline emit a WARNING log message.
+        """
+        with self.assertLogs("lsst.pipe.base.quantum_graph_builder", level="WARNING") as cm:
+            self._build(
+                skip_existing_in=["prior_run"],
+                retained_dataset_types=["no_such_dataset_type", "no_such_*"],
+            )
+        self.assertTrue(any("no_such_dataset_type" in msg for msg in cm.output))
+        self.assertTrue(any("no_such_*" in msg for msg in cm.output))
+
+    def test_no_unskipping_when_all_retained(self):
+        """'*' matches all dataset types; no ancestor unskipping occurs,
+        equivalent to not providing retained_dataset_types.
+        """
+        # task1 ran; metadata and dataset_auto1 present.
+        self._insert(self._task1.metadata_output.parent_dataset_type_name)
+        self._insert("dataset_auto1")
+        for edge in self._task1.init.iter_all_outputs():
+            self._insert(edge.parent_dataset_type_name)
+        qgraph = self._build(
+            skip_existing_in=["prior_run"],
+            retained_dataset_types=["*"],
+        )
+        # All types retained -> no unskipping -> task1 stays skipped,
+        # only task2 runs.
+        self.assertEqual(len(qgraph), 1)
+
+
+class RetainedDatasetTypesThreeTaskTestCase(unittest.TestCase):
+    """Tests for retained_dataset_types with a 3-task chain.
+
+    Pipeline: dataset_auto0 -> task_auto1 -> dataset_auto1
+                            -> task_auto2 -> dataset_auto2
+                            -> task_auto3 -> dataset_auto3
+    """
+
+    def setUp(self):
+        self.helper = InMemoryRepo()
+        self.enterContext(self.helper)
+        self.helper.add_task()
+        self.helper.add_task()
+        self.helper.add_task()
+        self.helper.make_quantum_graph_builder(output_run="new_run")
+        self.helper.butler.collections.register("prior_run")
+        self._task1 = self.helper.pipeline_graph.tasks["task_auto1"]
+        self._task2 = self.helper.pipeline_graph.tasks["task_auto2"]
+        self._task3 = self.helper.pipeline_graph.tasks["task_auto3"]
+        self._empty_data_id = DataCoordinate.make_empty(self.helper.butler.dimensions)
+
+    def _insert(self, *names, run="prior_run"):
+        """Register datasets with empty data IDs into a run collection."""
+        for name in names:
+            dt = self.helper.pipeline_graph.dataset_types[name].dataset_type
+            self.helper.butler.registry.insertDatasets(dt, [self._empty_data_id], run=run)
+
+    def _build(self, *, output_run="new_run", **kwargs):
+        return AllDimensionsQuantumGraphBuilder(
+            self.helper.pipeline_graph,
+            self.helper.butler,
+            input_collections=[self.helper.input_chain],
+            output_run=output_run,
+            **kwargs,
+        ).build(attach_datastore_records=False)
+
+    def test_unskipping_stops_at_retained_intermediate(self):
+        """task2's output is retained and present in skip_existing_in.
+        Only task3 runs, task1 and task2 remain skipped.
+        """
+        self._insert(self._task1.metadata_output.parent_dataset_type_name)
+        self._insert(self._task2.metadata_output.parent_dataset_type_name)
+        self._insert("dataset_auto2")
+        for edge in self._task1.init.iter_all_outputs():
+            self._insert(edge.parent_dataset_type_name)
+        for edge in self._task2.init.iter_all_outputs():
+            self._insert(edge.parent_dataset_type_name)
+        qgraph = self._build(
+            skip_existing_in=["prior_run"],
+            retained_dataset_types=["dataset_auto2", "*_metadata"],
+        )
+        self.assertEqual(len(qgraph), 1)
+
+    def test_full_chain_unskipped_when_none_retained(self):
+        """task3 needs to run.  Unskipping walks back through
+        dataset_auto2 (not retained) to unskip task2, then through
+        dataset_auto1 (not retained) to unskip task1.  All three tasks
+        run to regenerate the non-retained datasets.
+        """
+        self._insert(self._task1.metadata_output.parent_dataset_type_name)
+        self._insert(self._task2.metadata_output.parent_dataset_type_name)
+        qgraph = self._build(
+            skip_existing_in=["prior_run"],
+            retained_dataset_types=["*_metadata"],
+        )
+        self.assertEqual(len(qgraph), 3)
+
+
 if __name__ == "__main__":
     lsst.utils.tests.init()
     unittest.main()
