@@ -1,3 +1,12 @@
+lsst-pipe-base v30.0.8 (2026-06-09)
+===================================
+
+Other Changes and Additions
+---------------------------
+
+- Added garbage collection metrics to ``SingleQuantumExecutor`` with metrics stored in task metadata under ``quantum.gc_metrics`` key. (`DM-54645 <https://rubinobs.atlassian.net/browse/DM-54645>`_)
+
+
 lsst-pipe-base v30.0.6 (2026-04-06)
 ===================================
 
