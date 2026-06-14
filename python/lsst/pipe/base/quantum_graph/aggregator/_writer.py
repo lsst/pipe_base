@@ -172,15 +172,34 @@ class Writer:
         # chop out the datastore records since those don't appear in the
         # provenance graph.
         n_pred_quanta: int = 0
+        training_sample_size: int = 0
         for predicted_quantum in self.predicted.quantum_datasets.values():
             if len(training_inputs) == self.comms.config.zstd_dict_n_inputs:
                 break
             predicted_quantum.datastore_records.clear()
-            training_inputs.append(predicted_quantum.model_dump_json().encode())
+            block = predicted_quantum.model_dump_json().encode()
+            training_sample_size += len(block)
+            if training_sample_size >= self.comms.config.zstd_dict_input_max_bytes:
+                self.comms.log.warning(
+                    "Reached compression dict training sample size limit at %d predicted quanta.",
+                    len(training_inputs),
+                )
+                break
+            training_inputs.append(block)
+            training_sample_size += len(block)
             n_pred_quanta += 1
         # Add the provenance quanta, metadata, and logs we've accumulated.
         for write_request in self.pending_compression_training:
             assert not write_request.is_compressed, "We can't compress without the compression dictionary."
+            training_sample_size += len(write_request.quantum)
+            training_sample_size += len(write_request.metadata)
+            training_sample_size += len(write_request.logs)
+            if training_sample_size >= self.comms.config.zstd_dict_input_max_bytes:
+                self.comms.log.warning(
+                    "Reached compression dict training sample size limit at %d blocks.",
+                    len(training_inputs),
+                )
+                break
             training_inputs.append(write_request.quantum)
             training_inputs.append(write_request.metadata)
             training_inputs.append(write_request.logs)
