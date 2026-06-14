@@ -171,15 +171,34 @@ class Writer:
         # sample from just the first N, since they're ordered by UUID.  We
         # chop out the datastore records since those don't appear in the
         # provenance graph.
+        n_pred_quanta: int = 0
         for predicted_quantum in self.predicted.quantum_datasets.values():
             if len(training_inputs) == self.comms.config.zstd_dict_n_inputs:
                 break
             predicted_quantum.datastore_records.clear()
             training_inputs.append(predicted_quantum.model_dump_json().encode())
+            n_pred_quanta += 1
         # Add the provenance quanta, metadata, and logs we've accumulated.
         for write_request in self.pending_compression_training:
             assert not write_request.is_compressed, "We can't compress without the compression dictionary."
             training_inputs.append(write_request.quantum)
             training_inputs.append(write_request.metadata)
             training_inputs.append(write_request.logs)
-        return zstandard.train_dictionary(self.comms.config.zstd_dict_size, training_inputs)
+        try:
+            return zstandard.train_dictionary(self.comms.config.zstd_dict_size, training_inputs)
+        except zstandard.ZstdError as err:
+            n_write_requests = len(self.pending_compression_training)
+            pred_quanta_sum = sum(len(block) for block in training_inputs[:n_pred_quanta])
+            prov_quanta_sum = sum(len(block) for block in training_inputs[n_pred_quanta::3])
+            metadata_sum = sum(len(block) for block in training_inputs[n_pred_quanta + 1 :: 3])
+            logs_sum = sum(len(block) for block in training_inputs[n_pred_quanta + 2 :: 3])
+            total = pred_quanta_sum + prov_quanta_sum + metadata_sum + logs_sum
+            err.add_note(
+                f"Training sample had {len(training_inputs)} samples ({total} bytes) "
+                f"for compression dict of size {self.comms.config.zstd_dict_size}:"
+            )
+            err.add_note(f"  {n_pred_quanta} predicted quanta ({pred_quanta_sum} bytes)")
+            err.add_note(f"  {n_write_requests} provenance quanta ({prov_quanta_sum} bytes)")
+            err.add_note(f"  {n_write_requests} metadata datasets ({metadata_sum} bytes)")
+            err.add_note(f"  {n_write_requests} log datasets ({logs_sum} bytes)")
+            raise
