@@ -136,6 +136,11 @@ class AggregatorConfig(pydantic.BaseModel):
     logs, and metadata blocks encountered.
     """
 
+    zstd_dict_input_max_bytes: int = 1_048_576
+    """Maximum total size of the ZStandard compression dictionary training
+    sample.
+    """
+
     mock_storage_classes: bool = False
     """Enable support for storage classes by created by the
     lsst.pipe.base.tests.mocks package.
