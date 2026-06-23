@@ -332,50 +332,59 @@ class ConfigOverrides:
         for otype, override in self._overrides:
             if otype is OverrideTypes.File:
                 with override.open("r") as buffer:
-                    config.loadFromStream(buffer, filename=override.ospath, extraLocals=extraLocals)
+                    try:
+                        config.loadFromStream(buffer, filename=override.ospath, extraLocals=extraLocals)
+                    except Exception as e:
+                        e.add_note(f"Applying config override from file '{override.ospath}'")
+                        raise
             elif otype is OverrideTypes.Value:
-                field, value = override
-                if isinstance(value, str):
-                    value = self._parser(value, configParser)
-                # checking for dicts and lists here is needed because {} and []
-                # are valid yaml syntax so they get converted before hitting
-                # this method, so we must parse the elements.
-                #
-                # The same override would remain a string if specified on the
-                # command line, and is handled above.
-                if isinstance(value, dict):
-                    new = {}
-                    for k, v in value.items():
-                        if isinstance(v, str):
-                            new[k] = self._parser(v, configParser)
-                        else:
-                            new[k] = v
-                    value = new
-                elif isinstance(value, list):
-                    new = []
-                    for v in value:
-                        if isinstance(v, str):
-                            new.append(self._parser(v, configParser))
-                        else:
-                            new.append(v)
-                    value = new
-                # The field might be a string corresponding to a attribute
-                # hierarchy, attempt to split off the last field which
-                # will then be set.
-                parent, *child = field.rsplit(".", maxsplit=1)
-                if child:
-                    # This branch means there was a hierarchy, get the
-                    # field to set, and look up the sub config for which
-                    # it is to be set
-                    finalField = child[0]
-                    tmpConfig = attrgetter(parent)(config)
-                else:
-                    # There is no hierarchy, the config is the base config
-                    # and the field is exactly what was passed in
-                    finalField = parent
-                    tmpConfig = config
-                # set the specified config
-                setattr(tmpConfig, finalField, value)
+                try:
+                    field, value = override
+                    if isinstance(value, str):
+                        value = self._parser(value, configParser)
+                    # checking for dicts and lists here is needed because
+                    # {} and [] are valid yaml syntax so they get converted
+                    # before hitting this method,
+                    # so we must parse the elements.
+                    #
+                    # The same override would remain a string if
+                    # specified on the command line, and is handled above.
+                    if isinstance(value, dict):
+                        new = {}
+                        for k, v in value.items():
+                            if isinstance(v, str):
+                                new[k] = self._parser(v, configParser)
+                            else:
+                                new[k] = v
+                        value = new
+                    elif isinstance(value, list):
+                        new = []
+                        for v in value:
+                            if isinstance(v, str):
+                                new.append(self._parser(v, configParser))
+                            else:
+                                new.append(v)
+                        value = new
+                    # The field might be a string corresponding to a attribute
+                    # hierarchy, attempt to split off the last field which
+                    # will then be set.
+                    parent, *child = field.rsplit(".", maxsplit=1)
+                    if child:
+                        # This branch means there was a hierarchy, get the
+                        # field to set, and look up the sub config for which
+                        # it is to be set
+                        finalField = child[0]
+                        tmpConfig = attrgetter(parent)(config)
+                    else:
+                        # There is no hierarchy, the config is the base config
+                        # and the field is exactly what was passed in
+                        finalField = parent
+                        tmpConfig = config
+                    # set the specified config
+                    setattr(tmpConfig, finalField, value)
+                except Exception as e:
+                    e.add_note(f"Applying config override for field '{field}' with value '{value}'")
+                    raise
 
             elif otype is OverrideTypes.Python:
                 # exec python string with the context of all vars known. This
@@ -386,7 +395,15 @@ class ConfigOverrides:
                 # in a python block will be put into this scope. This means
                 # other config setting branches can make use of these
                 # variables.
-                exec(override, None, localVars)
+                try:
+                    exec(override, None, localVars)
+                except Exception as e:
+                    e.add_note(f"Applying config override with python code '{override}'")
+                    raise
             elif otype is OverrideTypes.Instrument:
-                instrument, name = override
-                instrument.applyConfigOverrides(name, config)
+                try:
+                    instrument, name = override
+                    instrument.applyConfigOverrides(name, config)
+                except Exception as e:
+                    e.add_note(f"Applying config override with instrument '{instrument}' and name '{name}'")
+                    raise
