@@ -562,6 +562,67 @@ class QuantumGraphSkeleton:
             if not orphan.is_task and orphan not in self._global_init_outputs:
                 self._xgraph.remove_node(orphan)
 
+    def remove_unanchored_quanta(self, source_label: str, anchor_label: str) -> tuple[int, int]:
+        """Remove unanchored source quanta and their entire downstream chain.
+
+        A source quantum is considered unanchored if no quantum with
+        ``anchor_label`` is reachable along directed edges from it.  Unanchored
+        source quanta and every descendant reachable from them are removed.
+
+        Any descendant of an unanchored source quantum is removed
+        unconditionally, regardless of what else may reach it. If downstream
+        subgraphs of distinct source quanta share nodes, the nodes are removed
+        as well.
+
+        Parameters
+        ----------
+        source_label : `str`
+            Task label of the source task whose unanchored quanta to remove.
+        anchor_label : `str`
+            Task label that must appear downstream of a source quantum for that
+            quantum to be considered anchored.
+
+        Returns
+        -------
+        n_source : `int`
+            Number of unanchored source quanta removed.
+        n_downstream : `int`
+            Number of additional downstream quanta removed (not counting
+            ``source_label`` quanta or any dataset nodes).
+        """
+        if not self.has_task(source_label):
+            return 0, 0
+        source_quanta = set(self.get_quanta(source_label))
+        anchor_quanta = set(self.get_quanta(anchor_label)) if self.has_task(anchor_label) else set()
+        reachable = set()
+        for quantum in anchor_quanta:
+            reachable.update(networkx.ancestors(self._xgraph, quantum))
+
+        unanchored = source_quanta - reachable
+        if not unanchored:
+            return 0, 0
+
+        # to_remove collects unanchored source quanta and all their
+        # descendants. It has both QuantumKey and DatasetKey nodes.
+        to_remove = set(unanchored)
+        for quantum in unanchored:
+            to_remove.update(networkx.descendants(self._xgraph, quantum))
+        n_downstream = sum(1 for n in to_remove if isinstance(n, QuantumKey) and n not in unanchored)
+        affected_labels = {n.task_label for n in to_remove if isinstance(n, QuantumKey)}
+        for node in to_remove:
+            if isinstance(node, QuantumKey):
+                _, quanta = self._tasks[node.task_label]
+                quanta.remove(node)
+        self._xgraph.remove_nodes_from(to_remove)
+        # For any task with no quanta remaining, remove its TaskInitKey and
+        # any init-output dataset nodes attached to it, then drop the task.
+        for label in affected_labels:
+            task_init_key, remaining = self._tasks[label]
+            if not remaining:
+                self._xgraph.remove_nodes_from(list(self._xgraph.successors(task_init_key)))
+                self.remove_task(label)
+        return len(unanchored), n_downstream
+
     def extract_overall_inputs(self) -> dict[DatasetKey | PrerequisiteDatasetKey, DatasetRef]:
         """Find overall input datasets.
 

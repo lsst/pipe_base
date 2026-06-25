@@ -465,6 +465,52 @@ class RetainedDatasetTypesThreeTaskTestCase(unittest.TestCase):
         self.assertEqual(len(qgraph), 3)
 
 
+class PruneUnanchoredQuantaTestCase(unittest.TestCase):
+    """Tests for the prune_unanchored_quanta behavior of QuantumGraphBuilder.
+
+    Pipeline: auto0 -> source -> auto1 -> anchor -> auto2
+
+    All tasks are dimensionless so each is one quantum.
+    """
+
+    def setUp(self):
+        self.helper = InMemoryRepo()
+        self.enterContext(self.helper)
+        self.helper.add_task("source")
+        self.helper.add_task("anchor")
+        self.helper.make_quantum_graph_builder(output_run="output_run")
+
+    def _build(self, **kwargs):
+        return AllDimensionsQuantumGraphBuilder(
+            self.helper.pipeline_graph,
+            self.helper.butler,
+            input_collections=[self.helper.input_chain],
+            output_run="output_run",
+            **kwargs,
+        ).build(attach_datastore_records=False)
+
+    def test_no_effect_without_parameter(self):
+        """Without prune_unanchored_quanta, all quanta are kept."""
+        qg = self._build()
+        self.assertEqual(len(qg), 2)
+
+    def test_no_pruning_when_anchor_reachable(self):
+        """Anchor reachable from source quantum: nothing is pruned."""
+        qg = self._build(prune_unanchored_quanta=("source", "anchor"))
+        self.assertEqual(len(qg), 2)
+
+    def test_all_pruned_when_anchor_label_absent(self):
+        """Anchor is absent: all source quanta and task removed."""
+        qg = self._build(prune_unanchored_quanta=("source", "no_such_task"))
+        self.assertEqual(len(qg), 0)
+        self.assertNotIn("source", {td.label for td in qg.iterTaskGraph()})
+
+    def test_noop_when_source_label_absent(self):
+        """source_label not in pipeline: nothing happens."""
+        qg = self._build(prune_unanchored_quanta=("no_such_task", "anchor"))
+        self.assertEqual(len(qg), 2)
+
+
 if __name__ == "__main__":
     lsst.utils.tests.init()
     unittest.main()
