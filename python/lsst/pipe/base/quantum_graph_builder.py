@@ -138,6 +138,12 @@ class QuantumGraphBuilder(ABC):
         the upstream quanta that need to regenerate those intermediates to also
         run.  Has no effect without ``skip_existing_in``.  ``["*"]`` means
         retaining all datasets, equivalent to not providing this option.
+    prune_unanchored_quanta : `tuple` [ `str`, `str` ], optional
+        A ``(source_label, anchor_label)`` pair of task labels triggering
+        unanchored quanta pruning after the skeleton is assembled.  A
+        ``source_label`` quantum is removed along with its entire downstream
+        chain if no ``anchor_label`` quantum is reachable from it along
+        directed graph edges.
     clobber : `bool`, optional
         Whether to raise if predicted outputs already exist in ``output_run``
         (not including those quanta that would be skipped because they've
@@ -182,6 +188,7 @@ class QuantumGraphBuilder(ABC):
         output_run: str | None = None,
         skip_existing_in: Sequence[str] = (),
         retained_dataset_types: Sequence[str] | None = None,
+        prune_unanchored_quanta: tuple[str, str] | None = None,
         clobber: bool = False,
     ):
         self.log = getLogger(__name__)
@@ -204,6 +211,7 @@ class QuantumGraphBuilder(ABC):
         )
         if self._retained_dataset_type_patterns is not None and not skip_existing_in:
             raise ValueError("retained_dataset_types has no effect without skip_existing_in.")
+        self._prune_unanchored_quanta = prune_unanchored_quanta
         self.empty_data_id = DataCoordinate.make_empty(butler.dimensions)
         self.clobber = clobber
         # See whether the output run already exists.
@@ -249,6 +257,21 @@ class QuantumGraphBuilder(ABC):
                 task_node.label: PrerequisiteInfo(task_node, self._pipeline_graph)
                 for task_node in pipeline_graph.tasks.values()
             }
+        if self._prune_unanchored_quanta is not None:
+            source_label, anchor_label = self._prune_unanchored_quanta
+            if source_label not in self._pipeline_graph.tasks:
+                self.log.warning(
+                    "prune_unanchored_quanta source label %s is not present in the pipeline; "
+                    "pruning will have no effect.",
+                    source_label,
+                )
+            elif anchor_label not in self._pipeline_graph.tasks:
+                self.log.warning(
+                    "prune_unanchored_quanta anchor label %s is not present in the pipeline; "
+                    "all %s quanta will be treated as unanchored and removed.",
+                    anchor_label,
+                    source_label,
+                )
 
     log: LsstLogAdapter
     """Logger to use for all quantum-graph generation messages.
@@ -470,6 +493,18 @@ class QuantumGraphBuilder(ABC):
             # with the quanta because no quantum knows if its the only
             # consumer).
             full_skeleton.remove_orphan_datasets()
+            if self._prune_unanchored_quanta is not None:
+                source_label, anchor_label = self._prune_unanchored_quanta
+                removed = full_skeleton.remove_unanchored_quanta(source_label, anchor_label)
+                if removed:
+                    for task_label, n_removed in removed.items():
+                        self.log.info(
+                            "Pruned %d unanchored or downstream %s quanta (anchor: %s).",
+                            n_removed,
+                            task_label,
+                            anchor_label,
+                        )
+                    full_skeleton.remove_orphan_datasets()
             if attach_datastore_records:
                 self._attach_datastore_records(full_skeleton)
         return full_skeleton
