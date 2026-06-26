@@ -17,11 +17,22 @@ def convert_multiblock_to_parquet(input_zip_path: str, output_zip_path: str) -> 
             cdict = zstandard.ZstdCompressionDict(cdict_path.read_bytes())
         decompressor = zstandard.ZstdDecompressor(cdict)
         with _initialize_duckdb_connection() as db:
-            for filename in ("quanta", "datasets", "metadata", "logs"):
+            for filename, id_field in (
+                ("quanta", "quantum_id"),
+                ("datasets", "dataset_id"),
+                ("metadata", None),
+                ("logs", None),
+            ):
                 reader = _get_record_batch_reader(filename, zf, decompressor)
+                id_column = f"data.{id_field}::UUID AS id," if id_field is not None else ""
+                order_by = "ORDER BY id" if id_field is not None else ""
                 db.execute(
-                    """
-                COPY (SELECT (data::JSON)::VARIANT as data FROM reader)
+                    f"""
+                COPY (
+                    SELECT {id_column} data FROM
+                    (SELECT (raw_data::JSON)::VARIANT as data FROM reader)
+                    {order_by}
+                )
                 TO $output_filename (FORMAT 'parquet', COMPRESSION 'zstd')
                 """,
                     {"output_filename": f"{filename}.parquet"},
@@ -69,7 +80,7 @@ def _to_batches(schema: pa.Schema, it: Iterator[bytes]) -> Iterator[pa.RecordBat
 def _get_record_batch_reader(
     filename: str, zip: zipfile.ZipFile, decompressor: zstandard.ZstdDecompressor
 ) -> pa.RecordBatchReader:
-    schema = pa.schema([("data", pa.string())])
+    schema = pa.schema([("raw_data", pa.string())])
     return pa.RecordBatchReader.from_batches(
         schema, _to_batches(schema, _fetch_json_bytes(filename, zip, decompressor))
     )
