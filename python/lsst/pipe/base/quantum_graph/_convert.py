@@ -6,7 +6,7 @@ from itertools import batched
 
 import pyarrow as pa
 import zstandard
-from duckdb import DuckDBPyConnection, connect
+from duckdb import ColumnExpression, DuckDBPyConnection, connect
 
 from ._multiblock import MultiblockReader
 
@@ -16,31 +16,29 @@ def convert_multiblock_to_parquet(input_zip_path: str, output_zip_path: str) -> 
         if (cdict_path := zipfile.Path(zf, "compression_dict")).exists():
             cdict = zstandard.ZstdCompressionDict(cdict_path.read_bytes())
         decompressor = zstandard.ZstdDecompressor(cdict)
-        with _initialize_duckdb_connection() as db:
-            for filename, id_field in (
-                ("quanta", "quantum_id"),
-                ("datasets", "dataset_id"),
-                ("metadata", None),
-                ("logs", None),
+        with initialize_duckdb_connection() as db:
+            for filename, id_field, variant_encode, row_group_size in (
+                ("quanta", "quantum_id", True, 122880),
+                ("datasets", "dataset_id", True, 122880),
+                # These don't really work as Parquet -- the individual values
+                # are too large, so we run out of memory easily when writing.
+                # ("metadata", None, False, 2048),
+                # ("logs", None, False, 2048),
             ):
                 reader = _get_record_batch_reader(filename, zf, decompressor)
-                id_column = f"data.{id_field}::UUID AS id," if id_field is not None else ""
-                order_by = "ORDER BY id" if id_field is not None else ""
-                db.execute(
-                    f"""
-                COPY (
-                    SELECT {id_column} data FROM
-                    (SELECT (raw_data::JSON)::VARIANT as data FROM reader)
-                    {order_by}
-                )
-                TO $output_filename (FORMAT 'parquet', COMPRESSION 'zstd')
-                """,
-                    {"output_filename": f"{filename}.parquet"},
-                )
+                sql = db.from_arrow(reader)
+                if variant_encode:
+                    sql = sql.select("(data::JSON)::VARIANT as data")
+                if id_field is not None:
+                    sql = sql.select(
+                        ColumnExpression(f"data.{id_field}").cast("UUID").alias("id"),
+                        "data",
+                    ).order("id")
+                sql.to_parquet(f"{filename}.parquet", compression="zstd", row_group_size=row_group_size)
 
 
 @contextmanager
-def _initialize_duckdb_connection(memory_limit: str = "8GB") -> Iterator[DuckDBPyConnection]:
+def initialize_duckdb_connection(memory_limit: str = "16GB") -> Iterator[DuckDBPyConnection]:
     """Set up an in-memory DuckDB database, applying a memory limit and using
     the system tempdir for its working directory.
     """
@@ -80,7 +78,7 @@ def _to_batches(schema: pa.Schema, it: Iterator[bytes]) -> Iterator[pa.RecordBat
 def _get_record_batch_reader(
     filename: str, zip: zipfile.ZipFile, decompressor: zstandard.ZstdDecompressor
 ) -> pa.RecordBatchReader:
-    schema = pa.schema([("raw_data", pa.string())])
+    schema = pa.schema([("data", pa.string())])
     return pa.RecordBatchReader.from_batches(
         schema, _to_batches(schema, _fetch_json_bytes(filename, zip, decompressor))
     )
