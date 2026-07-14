@@ -2455,7 +2455,7 @@ class ProvenanceQuantumScanData:
         Parameters
         ----------
         quantum_id : `uuid.UUID`
-            Unique ID of the quantum
+            Unique ID of the quantum.
 
         Returns
         -------
