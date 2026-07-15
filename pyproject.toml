@@ -196,6 +196,7 @@ checks = [
     "RT02",  # Does not want named return value. DM style says we do.
     "SS05",  # pydocstyle is better at finding infinitive verb.
     "RT03",  # sphinx bug requiring empty Returns.
+    "PR04",  # We use type annotations.
 ]
 exclude = [
     '^__init__$',

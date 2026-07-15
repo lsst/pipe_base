@@ -1,3 +1,19 @@
+lsst-pipe-base v30.0.9 (2026-07-14)
+===================================
+
+New Features
+------------
+
+- Added ``retained_dataset_types`` parameter to ``QuantumGraphBuilder`` and ``SeparablePipelineExecutor``. (`DM-54879 <https://rubinobs.atlassian.net/browse/DM-54879>`_)
+- Added ``prune_unanchored_quanta`` parameter to ``QuantumGraphBuilder`` (`DM-55320 <https://rubinobs.atlassian.net/browse/DM-55320>`_)
+
+
+Bug Fixes
+---------
+
+- Fixed zstd failure in ``butler aggregate-graph`` when logs are really huge. (`DM-55232 <https://rubinobs.atlassian.net/browse/DM-55232>`_)
+
+
 lsst-pipe-base v30.0.8 (2026-06-09)
 ===================================
 
