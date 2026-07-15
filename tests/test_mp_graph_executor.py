@@ -31,16 +31,18 @@ import logging
 import multiprocessing
 import multiprocessing.context
 import os
+import pickle
 import signal
 import sys
 import unittest
+import unittest.mock
 import warnings
 from typing import Literal
 
 import psutil
 
 from lsst.pipe.base.exec_fixup_data_id import ExecFixupDataId
-from lsst.pipe.base.mp_graph_executor import MPGraphExecutor, MPGraphExecutorError, MPTimeoutError
+from lsst.pipe.base.mp_graph_executor import MPGraphExecutor, MPGraphExecutorError, MPTimeoutError, _Job
 from lsst.pipe.base.quantum_reports import ExecutionStatus, Report
 from lsst.pipe.base.tests.mocks import (
     DynamicConnectionConfig,
@@ -420,6 +422,37 @@ class MPGraphExecutorTestCase(unittest.TestCase):
         # Without DM-26728 fix the difference would be equal to number of
         # quanta (20).
         self.assertLess(num_fds_1 - num_fds_0, 5)
+
+    def test_executejob_disables_implicit_threading(self) -> None:
+        """Check that the subprocess entry point disables implicit threading
+        itself, since runtime thread limits applied in the parent process do
+        not propagate to spawned processes.
+        """
+        helper = InMemoryRepo("base.yaml")
+        self.enterContext(helper)
+        helper.add_task(dimensions=["detector"])
+        qg = helper.make_quantum_graph()
+        qexec, _ = helper.make_single_quantum_executor()
+        qg.build_execution_quanta()
+        xgraph = qg.quantum_only_xgraph
+        quantum_id = next(iter(xgraph))
+        node = xgraph.nodes[quantum_id]
+        rcv_conn, snd_conn = multiprocessing.Pipe(False)
+        with unittest.mock.patch(
+            "lsst.pipe.base.mp_graph_executor.disable_implicit_threading"
+        ) as mock_disable:
+            _Job._executeJob(
+                pickle.dumps(qexec),
+                pickle.dumps(node["pipeline_node"]),
+                pickle.dumps(node["quantum"]),
+                quantum_id,
+                [],
+                snd_conn,
+                False,
+            )
+        mock_disable.assert_called_once_with()
+        # The job ran to completion and sent its report.
+        self.assertTrue(rcv_conn.poll())
 
 
 def setup_module(module):

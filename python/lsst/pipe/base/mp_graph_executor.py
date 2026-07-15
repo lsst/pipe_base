@@ -199,6 +199,12 @@ class _Job:
         fail_fast : `bool`
             If `True` then kill subprocess on RepeatableQuantumError.
         """
+        # This process was started with the spawn method, so runtime thread
+        # limits applied in the parent process do not carry over and implicit
+        # threading has to be disabled again. Inherited environment variables
+        # only cover libraries that have not yet created their thread pools.
+        disable_implicit_threading()
+
         # This terrible hack is a workaround for Python threading bug:
         # https://github.com/python/cpython/issues/102512. Should be removed
         # when fix for that bug is deployed. Inspired by
