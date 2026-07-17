@@ -38,7 +38,15 @@ from typing import Any
 
 import lsst.pipe.base.automatic_connection_constants as acc
 import lsst.utils.tests
-from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, DimensionUniverse, StorageClassFactory
+from lsst.daf.butler import (
+    DataCoordinate,
+    DatasetRef,
+    DatasetType,
+    DimensionConfig,
+    DimensionUniverse,
+    InconsistentUniverseError,
+    StorageClassFactory,
+)
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.pipe.base.pipeline_graph import (
     ConnectionTypeConsistencyError,
@@ -60,6 +68,7 @@ from lsst.pipe.base.tests.mocks import (
     DynamicConnectionConfig,
     DynamicTestPipelineTask,
     DynamicTestPipelineTaskConfig,
+    InMemoryRepo,
     get_mock_name,
 )
 
@@ -1828,6 +1837,65 @@ class PipelineGraphResolveTestCase(unittest.TestCase):
         with self.assertRaises(Exception) as error:
             graph.resolve(MockRegistry(self.dimensions, {}))
         self.assertEqual(error.exception.__notes__, ["In connection 'o' of task 'a'."])
+
+
+class RegisterDatasetTypesUniverseTestCase(unittest.TestCase):
+    """Tests for `PipelineGraph.register_dataset_types` when the pipeline
+    graph was resolved against a dimension universe that differs from the
+    target butler's universe.
+    """
+
+    def _make_other_universe(self, version_offset: int) -> DimensionUniverse:
+        """Make a dimension universe that differs from the default universe
+        only in its version.
+        """
+        config = DimensionConfig()
+        config["version"] = config["version"] + version_offset
+        return DimensionUniverse(config)
+
+    def test_compatible_universe(self) -> None:
+        """Test that dataset types resolved in a different but compatible
+        universe are registered using the butler's own universe.
+        """
+        universe = self._make_other_universe(1000000)
+        with InMemoryRepo() as helper:
+            self.assertIsNot(universe, helper.butler.dimensions)
+            helper.add_task(dimensions=["detector"])
+            helper.pipeline_graph.resolve(dimensions=universe)
+            helper.pipeline_graph.register_dataset_types(helper.butler)
+            dataset_type = helper.butler.get_dataset_type("dataset_auto0")
+            self.assertIs(dataset_type.dimensions.universe, helper.butler.dimensions)
+            self.assertEqual(dataset_type.dimensions.names, {"instrument", "detector"})
+
+    def test_incompatible_dimensions(self) -> None:
+        """Test that dataset types whose dimensions do not conform identically
+        in the butler's universe are rejected.
+        """
+        config = DimensionConfig()
+        config["version"] = config["version"] + 1000001
+        # Dropping the implied dependency on band means that a dataset type
+        # with physical_filter dimensions conforms to a larger dimension group
+        # in the default universe than it does in this one.
+        config["elements", "physical_filter", "implies"] = []
+        universe = DimensionUniverse(config)
+        with InMemoryRepo() as helper:
+            helper.add_task(dimensions=["physical_filter"])
+            helper.pipeline_graph.resolve(dimensions=universe)
+            with self.assertRaises(InconsistentUniverseError):
+                helper.pipeline_graph.register_dataset_types(helper.butler)
+
+    def test_incompatible_namespace(self) -> None:
+        """Test that dataset types from a universe with a different namespace
+        are rejected.
+        """
+        config = DimensionConfig()
+        config["namespace"] = "pipe_base_test"
+        universe = DimensionUniverse(config)
+        with InMemoryRepo() as helper:
+            helper.add_task(dimensions=["detector"])
+            helper.pipeline_graph.resolve(dimensions=universe)
+            with self.assertRaises(InconsistentUniverseError):
+                helper.pipeline_graph.register_dataset_types(helper.butler)
 
 
 if __name__ == "__main__":

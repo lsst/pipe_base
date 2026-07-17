@@ -1740,7 +1740,7 @@ class PipelineGraph:
                 if task_node.log_output is not None:
                     del dataset_types[task_node.log_output.dataset_type_name]
         for dataset_type in dataset_types.values():
-            butler.registry.registerDatasetType(dataset_type)
+            butler.registry.registerDatasetType(dataset_type.conform_to(butler.dimensions))
 
     def check_dataset_type_registrations(self, butler: Butler, include_packages: bool = True) -> None:
         """Check that dataset type registrations in a data repository match
