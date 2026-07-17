@@ -44,6 +44,7 @@ import abc
 import enum
 import logging
 import sys
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 import pydantic
@@ -359,7 +360,7 @@ class GetSetDictMetadataHolder(Protocol):
     """
 
     @property
-    def metadata(self) -> GetSetDictMetadata | None:
+    def metadata(self) -> GetSetDictMetadata | MutableMapping[str, Any] | None:
         pass
 
 
@@ -500,7 +501,8 @@ class AnnotatedPartialOutputsError(RepeatableQuantumError):
             Exception that caused the task to fail.
         *args : `GetSetDictMetadataHolder`
             Objects (e.g. Task, Exposure, SimpleCatalog) to annotate with
-            failure information. They must have a `metadata` property.
+            failure information. They must have a `metadata` property that
+            is a `~collections.abc.MutableMapping`.
         log : `logging.Logger`
             Log to send error message to.
 
@@ -548,7 +550,10 @@ class AnnotatedPartialOutputsError(RepeatableQuantumError):
             # Some outputs may not exist, so we cannot set metadata on them.
             if item is None:
                 continue
-            item.metadata.set_dict("failure", failure_info)  # type: ignore
+            if hasattr(item.metadata, "set_dict"):
+                item.metadata.set_dict("failure", failure_info)  # type: ignore
+            elif isinstance(item.metadata, MutableMapping):
+                item.metadata["failure"] = failure_info
 
         log.debug(
             "Task failed with only partial outputs; see exception message for details.",
