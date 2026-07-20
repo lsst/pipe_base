@@ -507,7 +507,9 @@ class SimplePipelineExecutor:
         collections.
         """
         if not Butler.has_repo_config(root):
-            Butler.makeRepo(root)
+            # Ensure that the universe in the output butler matches the
+            # universe in the source butler for maximal compatibility.
+            Butler.makeRepo(root, dimensionConfig=self.butler.dimensions.dimensionConfig)
         out_butler = Butler.from_config(root, writeable=True)
 
         output_run = self.predicted.header.output_run
