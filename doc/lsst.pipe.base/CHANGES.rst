@@ -1,3 +1,16 @@
+lsst-pipe-base v30.0.10 (2026-07-20)
+====================================
+
+Bug Fixes
+---------
+
+- Explicitly disabled implicit threading inside each multiprocessing worker process.
+  Runtime thread limits applied in the parent process do not propagate to spawned processes and inherited environment variables only cover libraries that have not yet created their thread pools. (`DM-55482 <https://rubinobs.atlassian.net/browse/DM-55482>`_)
+- `PipelineGraph.register_dataset_types` now conforms each dataset type to the butler's dimension universe before registration.
+  This allows a quantum graph resolved against one universe version to be executed with a butler using a different but compatible universe, such as a local butler repository created by an earlier run.
+  `SimplePipelineExecutor.use_local_butler` also now creates the local data repository with the source butler's dimension universe. (`DM-55542 <https://rubinobs.atlassian.net/browse/DM-55542>`_)
+
+
 lsst-pipe-base v30.0.9 (2026-07-14)
 ===================================
 
