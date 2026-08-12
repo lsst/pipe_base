@@ -32,6 +32,7 @@ import itertools
 import os
 import tempfile
 import time
+import types
 import unittest.mock
 import uuid
 from collections.abc import Iterator
@@ -75,6 +76,7 @@ from lsst.pipe.base.quantum_graph import (
     ProvenanceTaskMetadataModel,
 )
 from lsst.pipe.base.quantum_graph.aggregator import AggregatorConfig, FatalWorkerError, aggregate_graph
+from lsst.pipe.base.quantum_graph.aggregator._writer import Writer
 from lsst.pipe.base.quantum_graph.ingest_graph import ingest_graph
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
 from lsst.pipe.base.single_quantum_executor import SingleQuantumExecutor
@@ -1339,6 +1341,66 @@ class AggregatorTestCase(unittest.TestCase):
             data = stream.read()
         prov_md = ProvenanceTaskMetadataModel.model_validate_json(data)
         self.assertTrue(np.isnan(prov_md.attempts[0]["calibrateImage:psf_measure_psf"]["spatialFitChi2"]))
+
+
+class CompressionDictTestCase(unittest.TestCase):
+    """Test `Writer.make_compression_dictionary` guards against zstandard's
+    undocumented requirments.
+
+    zstandard's ``ZDICT_optimizeTrainFromBuffer_fastCover`` refuses to train
+    from fewer than 5 training samples (with its default 0.75 train/test split,
+    that means at least 7 samples overall) and raises
+    ``cannot train dict: Src size is incorrect`` otherwise.
+    """
+
+    class _Log:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
+
+        def __getattr__(self, name: str) -> Any:
+            if name in ("info", "warning", "warn"):
+
+                def _log(msg: str, *args: Any) -> None:
+                    self.messages.append(msg % args)
+
+                return _log
+            raise AttributeError(name)
+
+    class _Config:
+        zstd_dict_size = 256
+        zstd_dict_n_inputs = 1
+        zstd_dict_input_max_bytes = 1_048_576
+
+    class _Scan:
+        is_compressed = False
+
+        def __init__(self, i: int, scale: int = 64) -> None:
+            self.quantum = b"q%d" % i * scale
+            self.metadata = b"m%d" % i * scale
+            self.logs = b"l%d" % i * scale
+
+    def make_writer(self, n_scans: int) -> Writer:
+        writer = object.__new__(Writer)
+        writer.comms = types.SimpleNamespace(config=self._Config(), log=self._Log())
+        writer.predicted = types.SimpleNamespace(quantum_datasets={})
+        writer.pending_compression_training = [self._Scan(i) for i in range(n_scans)]
+        return writer
+
+    def test_fallback_to_no_dictionary_with_too_few_samples(self) -> None:
+        # 2 scans -> 6 samples, fewer than the 7 required by zstandard.
+        writer = self.make_writer(2)
+        cdict = writer.make_compression_dictionary()
+        self.assertEqual(cdict.as_bytes(), b"")
+        self.assertTrue(
+            any("Only 6 < 7 samples" in message for message in writer.comms.log.messages),
+            "expected a warning explaining the fallback.",
+        )
+
+    def test_trains_dictionary_with_enough_samples(self) -> None:
+        # 4 scans -> 12 samples, enough for zstandard to train.
+        writer = self.make_writer(4)
+        cdict = writer.make_compression_dictionary()
+        self.assertNotEqual(cdict.as_bytes(), b"")
 
 
 if __name__ == "__main__":

@@ -178,7 +178,6 @@ class Writer:
                 break
             predicted_quantum.datastore_records.clear()
             block = predicted_quantum.model_dump_json().encode()
-            training_sample_size += len(block)
             if training_sample_size >= self.comms.config.zstd_dict_input_max_bytes:
                 self.comms.log.warning(
                     "Reached compression dict training sample size limit at %d predicted quanta.",
@@ -203,6 +202,17 @@ class Writer:
             training_inputs.append(write_request.quantum)
             training_inputs.append(write_request.metadata)
             training_inputs.append(write_request.logs)
+        if len(training_inputs) < 7:
+            # zstandard raises a totally opaque exception when there aren't
+            # enough training samples or their total size is too big.  An
+            # AI-assisted scan of the source code says it needs >=7 samples
+            # and < 4GB total.
+            self.comms.log.warning(
+                "Only %d < 7 samples available for compression dictionary training; "
+                "Falling back to less-effective no-dictionary compression.",
+                len(training_inputs),
+            )
+            return zstandard.ZstdCompressionDict(b"")
         try:
             return zstandard.train_dictionary(self.comms.config.zstd_dict_size, training_inputs)
         except zstandard.ZstdError as err:
