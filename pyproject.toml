@@ -47,6 +47,7 @@ pipe_base = "lsst.pipe.base.cli:get_cli_subcommands"
 "Source" = "https://github.com/lsst/pipe_base"
 
 [project.optional-dependencies]
+pandas = ["pandas"]
 test = ["pytest >= 3.2"]
 mermaid = ["mermaid-py >= 0.7.1"]
 
