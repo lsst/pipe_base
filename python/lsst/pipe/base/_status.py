@@ -43,6 +43,7 @@ __all__ = (
 import abc
 import enum
 import logging
+import re
 import sys
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
@@ -129,6 +130,27 @@ class QuantumSuccessCaveats(enum.Flag):
         `PipelineTaskConnections.adjustdQuantum` raised `NoWorkFound`.
         """
         return cls.NO_WORK | cls.ADJUST_QUANTUM_RAISED | cls.ANY_OUTPUTS_MISSING | cls.ALL_OUTPUTS_MISSING
+
+    @classmethod
+    def expanded_dict(cls, concise: str) -> dict | None:
+        """Return a dictionary representation of the concise flags.
+
+        Parameters
+        ----------
+        concise : `str`
+            The concise string representation of the flags to expand to a
+            dictionary.
+
+        Returns
+        -------
+        d : `dict` | `None`
+            A dictionary expansion of the concise flag string with `token`,
+            `code`, and `count` keys; or `None` if the string does not
+            represent a concise flag.
+        """
+        r = re.compile(r"(?P<token>\*|\+)?(?P<code>[A-Z]{1})\((?P<count>[0-9]+)\)")
+        m = re.match(r, concise)
+        return m.groupdict() if m is not None else None
 
     def concise(self) -> str:
         """Return a concise string representation of the flags.

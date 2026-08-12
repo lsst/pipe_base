@@ -28,7 +28,7 @@
 import functools
 import operator
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal
 
 import click
 
@@ -369,6 +369,13 @@ def ingest_graph(
         "task label, status, and exception type combination in the status report."
     ),
 )
+@click.option(
+    "--format",
+    type=click.Choice(["json", "table"]),
+    default="table",
+    show_default=True,
+    help=("Output format for provenance report, either a human-readable table or machine-readable JSON."),
+)
 def provenance_report(
     *,
     repo_or_qg: str,
@@ -380,6 +387,7 @@ def provenance_report(
     exception_table: bool = False,
     caveat: Iterable[QuantumSuccessCaveats],
     data_id_table_dir: str | None,
+    format: Literal["json", "table"],
 ) -> None:
     """Read a provenance quantum graph from a butler or file and use it to
     generate reports.
@@ -412,4 +420,5 @@ def provenance_report(
             print_exception_table=exception_table,
             with_caveats=with_caveats,
             data_id_table_dir=data_id_table_dir,
+            output_format=format,
         )

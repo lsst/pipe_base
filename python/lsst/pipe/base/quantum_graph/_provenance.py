@@ -49,12 +49,13 @@ __all__ = (
 import dataclasses
 import enum
 import itertools
+import json
 import sys
 import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 import astropy.table
 import networkx
@@ -1307,7 +1308,9 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         """
         return self._bipartite_xgraph.copy(as_view=True)
 
-    def make_quantum_table(self, drop_unused_columns: bool = True) -> astropy.table.Table:
+    def make_quantum_table(
+        self, drop_unused_columns: bool = True, expand_caveats: bool = False, as_table: bool = True
+    ) -> astropy.table.Table | list[dict]:
         """Construct an `astropy.table.Table` with a tabular summary of the
         quanta.
 
@@ -1317,12 +1320,19 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
             Whether to drop columns for rare states that did not actually
             occur in this run.
 
+        expand_caveats : `bool`, optional
+            Whether to display a comma-separated list of task caveats instead
+            of a collapsed `multiple` marker.
+
+        as_table : `bool`, optional
+            Whether to return an `astropy.table.Table` or a list of rows.
+
         Returns
         -------
-        table : `astropy.table.Table`
+        table : `astropy.table.Table` | `list[dict]`
             A table view of the quantum information.  This only includes
             counts of status categories and caveats, not any per-data-ID
-            detail.
+            detail. If `as_table` is False, returns a raw list of rows.
 
         Notes
         -----
@@ -1331,25 +1341,30 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         table for users, the `~QuantumSuccessCaveats.legend` should generally
         be printed as well.
         """
-        rows = []
+        rows: list[dict] = []
         for task_label, quanta_for_task in self.quanta_by_task.items():
             if not self.header.n_task_quanta[task_label]:
                 continue
-            status_counts = Counter[QuantumAttemptStatus](
+            status_counts: Counter[QuantumAttemptStatus] = Counter(
                 self._quantum_only_xgraph.nodes[q]["status"] for q in quanta_for_task.values()
             )
-            caveat_counts = Counter[QuantumSuccessCaveats | None](
+            caveat_counts: Counter[QuantumSuccessCaveats | None] = Counter(
                 self._quantum_only_xgraph.nodes[q]["caveats"] for q in quanta_for_task.values()
             )
             caveat_counts.pop(QuantumSuccessCaveats.NO_CAVEATS, None)
             caveat_counts.pop(None, None)
-            if len(caveat_counts) > 1:
+
+            if len(caveat_counts) > 1 and expand_caveats:
+                caveats = ",".join(
+                    f"{code.concise()}({count})" for code, count in caveat_counts.items() if code is not None
+                )
+            elif len(caveat_counts) > 1:
                 caveats = "(multiple)"
             elif len(caveat_counts) == 1:
                 ((code, count),) = caveat_counts.items()
-                # MyPy can't tell that the pop(None, None) above makes None
-                # impossible here.
-                caveats = f"{code.concise()}({count})"  # type: ignore[union-attr]
+                if TYPE_CHECKING:
+                    assert code is not None
+                caveats = f"{code.concise()}({count})"
             else:
                 caveats = ""
             row: dict[str, Any] = {
@@ -1365,6 +1380,8 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                 }
             )
             rows.append(row)
+        if not as_table:
+            return rows
         table = astropy.table.Table(rows)
         if drop_unused_columns:
             for status in QuantumAttemptStatus:
@@ -1372,16 +1389,22 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                     del table[status.title]
         return table
 
-    def make_exception_table(self) -> astropy.table.Table:
+    def make_exception_table(self, as_table: bool = True) -> astropy.table.Table | list[dict]:
         """Construct an `astropy.table.Table` with counts for each exception
         type raised by each task.
 
+        Parameters
+        ----------
+        as_table : `bool`, optional
+            Whether to return an `astropy.table.Table` or a list of rows.
+
         Returns
         -------
-        table : `astropy.table.Table`
-            A table with columns for task label, exception type, and counts.
+        table : `astropy.table.Table` | `list[dict]`
+            A table with columns for task label, exception type, and counts,
+            or the raw table rows as a list of dicts.
         """
-        rows = []
+        rows: list[dict] = []
         for task_label, quanta_for_task in self.quanta_by_task.items():
             success_counts = Counter[str]()
             failed_counts = Counter[str]()
@@ -1402,7 +1425,10 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                         "Failures": failed_counts.get(type_name, 0),
                     }
                 )
-        return astropy.table.Table(rows)
+        if as_table:
+            return astropy.table.Table(rows)
+        else:
+            return rows
 
     def make_task_resource_usage_table(
         self, task_label: TaskLabel, include_data_ids: bool = False
@@ -1552,6 +1578,9 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         also: QuantumAttemptStatus | Iterable[QuantumAttemptStatus] = (),
         with_caveats: QuantumSuccessCaveats | None = None,
         data_id_table_dir: ResourcePathExpression | None = None,
+        output_format: Literal["json", "table"] = "table",
+        print_legend: bool = True,
+        expand_caveats: bool = False,
     ) -> None:
         """Write multiple reports.
 
@@ -1589,7 +1618,27 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
             Subdirectories for each task and status will created within this
             directory, with one file for each exception type (or ``UNKNOWN``
             when there is no exception).
+        output_format : `str`, optional
+            Sets the output format for the data printed to stdout. Defaults to
+            `table`, which presents one or more text tables; `json` produces
+            machine-readable JSON formatted data.
+        print_legend : `bool`, optional
+            When `True`, prints a legend section describing the caveats
+            notation after displaying the output tables.
+        expand_caveats : `bool`, optional
+            If `False` (default), multiple caveats will be reduced to a single
+            value; if `True`, then all available caveats will be displayed.
+            This option is set to `True` when the output format is JSON.
         """
+        as_table = output_format == "table"
+
+        if output_format == "json":
+            json_obj: dict[str, Any] = {"tasks": None, "exceptions": None}
+            expand_caveats = True
+
+        if TYPE_CHECKING:
+            assert json_obj
+
         if status_report_file is not None or data_id_table_dir is not None:
             status_report = self.make_status_report(
                 states, also=also, with_caveats=with_caveats, data_id_table_dir=data_id_table_dir
@@ -1601,15 +1650,42 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                 with ResourcePath(status_report_file).open("w") as stream:
                     stream.write(status_report.model_dump_json(indent=2))
         if print_quantum_table:
-            quantum_table = self.make_quantum_table()
-            if quantum_table:
-                quantum_table.pprint_all()
-                print("")
+            quantum_table = self.make_quantum_table(expand_caveats=expand_caveats, as_table=as_table)
+            match (len(quantum_table) > 0, quantum_table):
+                case (True, astropy.table.Table()):
+                    quantum_table.pprint_all()
+                    print("")
+                    if print_legend:
+                        print("Caveats\n-------")
+                        for k, v in QuantumSuccessCaveats.legend().items():
+                            print(f"{k}: {v}")
+                    print("")
+                case (True, list()):
+                    json_obj["tasks"] = [
+                        {
+                            **row,
+                            "Caveats": [
+                                QuantumSuccessCaveats.expanded_dict(w) for w in row["Caveats"].split(",")
+                            ],
+                        }
+                        for row in quantum_table
+                    ]
+                case _:
+                    pass
         if print_exception_table:
-            exception_table = self.make_exception_table()
-            if exception_table:
-                exception_table.pprint_all()
-                print("")
+            exception_table = self.make_exception_table(as_table=as_table)
+            match (len(exception_table) > 0, exception_table):
+                case (True, astropy.table.Table()):
+                    exception_table.pprint_all()
+                    print("")
+                case (True, list()):
+                    json_obj["exceptions"] = exception_table
+                case _:
+                    pass
+
+        if output_format == "json":
+            json_obj["legend"] = QuantumSuccessCaveats.legend()
+            json.dump(json_obj, sys.stdout)
 
 
 @dataclasses.dataclass
