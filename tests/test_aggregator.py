@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import json
 import os
+import re
 import tempfile
 import time
 import unittest.mock
@@ -1107,19 +1109,20 @@ class AggregatorTestCase(unittest.TestCase):
     def check_provenance_report(self, result: click.testing.Result, root: str) -> None:
         self.maxDiff = None
         self.assertEqual(result.exit_code, 0, msg=result.output)
-        self.assertEqual(
-            result.output,
-            "    Task    Caveats Failed Blocked Successful TOTAL EXPECTED\n"
-            "----------- ------- ------ ------- ---------- ----- --------\n"
-            "  calibrate              1       0          7     8        8\n"
-            "consolidate              0       1          1     2        2\n"
-            "   resample              0       4          6    10       10\n"
-            "      coadd              0       4          6    10       10\n"
-            "\n"
-            "   Task                     Exception                   Successes Failures\n"
-            "--------- --------------------------------------------- --------- --------\n"
-            "calibrate lsst.pipe.base.tests.mocks.MockAlgorithmError         0        1\n"
-            "\n",
+        self.assertRegex(
+            result.output.replace("\n", ""),
+            re.compile(
+                r"\s*Task\s+Caveats\s+Failed\s+Blocked\s+Successful\s+TOTAL EXPECTED"
+                r"[-\s]*"
+                r"\s*calibrate \s* 1 \s* 0 \s* 7 \s* 8 \s* 8"
+                r"\s*consolidate \s* 0 \s* 1 \s* 1 \s* 2 \s* 2"
+                r"\s*resample \s* 0 \s* 4 \s* 6 \s* 10 \s* 10"
+                r"\s*coadd \s* 0 \s* 4 \s* 6 \s* 10 \s* 10"
+                r".*(Caveats[-\s]*)?.*"
+                r"\s*Task\s+Exception\s+Successes\s+Failures"
+                r"[-\s]*"
+                r"calibrate\s*lsst.pipe.base.tests.mocks.MockAlgorithmError \s* 0 \s* 1"
+            ),
         )
         with open(os.path.join(root, "report.json")) as report_file:
             report = ProvenanceReport.model_validate_json(report_file.read())
@@ -1143,6 +1146,14 @@ class AggregatorTestCase(unittest.TestCase):
                 ),
             ],
         )
+
+    def check_provenance_report_json(self, result: click.testing.Result, root: str) -> None:
+        """Check that the json output is valid and has the correct number of
+        rows.
+        """
+        loaded_json = json.loads(result.output)
+        self.assertEqual(len(loaded_json["tasks"]), 4)
+        self.assertEqual(len(loaded_json["exceptions"]), 1)
 
     def check_no_original_dirs(self, butler_path: str, output_run: str) -> None:
         """Check that there are no config/log/metadata directories in
@@ -1198,6 +1209,33 @@ class AggregatorTestCase(unittest.TestCase):
                 ),
             )
             self.check_provenance_report(result, os.path.join(report_root))
+
+    def test_provenance_report_cli_json_output(self) -> None:
+        """Test the json output option with a mocked implementation."""
+        with self.make_test_repo() as prep:
+            prep.config.incomplete = False
+            prep.config.promise_ingest_graph = True
+            for _ in self.iter_graph_execution(
+                prep.butler_path, prep.predicted, raise_on_partial_outputs=True
+            ):
+                pass
+            aggregate_graph(prep.predicted_path, prep.butler_path, prep.config)
+            self.assertFalse(prep.butler.query_datasets("calibrate_metadata", explain=False))
+            self.assertFalse(prep.butler.query_datasets("consolidate_log", explain=False))
+            self.assertFalse(prep.butler.query_datasets("resample_config", explain=False))
+
+            # First test on a provenance graph file that has not been ingested.
+            runner = CliRunner()
+            report_root = os.path.join(prep.butler_path, "uningested")
+            result = runner.invoke(
+                provenance_report_cli,
+                (
+                    cast(str, prep.config.output_path),
+                    "--format",
+                    "json",
+                ),
+            )
+            self.check_provenance_report_json(result, report_root)
 
     def test_provenance_report_cli_overrides(self) -> None:
         """Test the provenance-report CLI command with a mocked
