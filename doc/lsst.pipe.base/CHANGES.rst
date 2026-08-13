@@ -1,3 +1,12 @@
+lsst-pipe-base v30.0.11 (2026-08-13)
+====================================
+
+Other Changes and Additions
+---------------------------
+
+- Now allow regular mutable mappings for metadata failure annnotations. (`DM-55521 <https://rubinobs.atlassian.net/browse/DM-55521>`_)
+
+
 lsst-pipe-base v30.0.10 (2026-07-20)
 ====================================
 
