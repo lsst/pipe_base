@@ -47,6 +47,7 @@ from lsst.utils.doImport import doImportType
 from lsst.utils.introspection import get_full_type_name
 
 from .. import automatic_connection_constants as acc
+from .._prerequisite_query import PrerequisiteQuery
 from ..connections import PipelineTaskConnections
 from ..connectionTypes import BaseConnection, BaseInput, InitOutput, Output
 from ._edges import Edge, ReadEdge, WriteEdge
@@ -905,6 +906,23 @@ class TaskNode:
             `~lsst.daf.butler.DatasetRef`.
         """
         return getattr(self._get_imported_data().connection_map[connection_name], "lookupFunction", None)
+
+    def get_prerequisite_query(self, connection_name: str) -> PrerequisiteQuery | None:
+        """Return the custom prerequisite query function for an edge, if one
+        exists.
+
+        Parameters
+        ----------
+        connection_name : `str`
+            Name of the connection.
+
+        Returns
+        -------
+        query : `.PrerequisiteQuery` or `None`
+            A `PrerequisiteQuery` instance or `None`.  Always `None` for
+            non-prerequisite connections.
+        """
+        return getattr(self._get_imported_data().connection_map[connection_name], "query", None)
 
     def is_optional(self, connection_name: str) -> bool:
         """Check whether the given connection has ``minimum==0``.

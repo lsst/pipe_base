@@ -57,6 +57,7 @@ from lsst.daf.butler import (
 from lsst.daf.butler.registry import MissingDatasetTypeError
 from lsst.sphgeom import RangeSet, Region
 
+from ._prerequisite_query import PrerequisiteQuery
 from .pipeline_graph import DatasetTypeNode, PipelineGraph, ReadEdge, TaskNode
 
 
@@ -148,6 +149,16 @@ class PrerequisiteFinder:
         self._bounds = bounds
         self.dataset_type_node = pipeline_graph.dataset_types[edge.parent_dataset_type_name]
         self.lookup_function = self.task_node.get_lookup_function(edge.connection_name)
+        self.query = PrerequisiteQuery()
+        if (query := self.task_node.get_prerequisite_query(edge.connection_name)) is not None:
+            self.query = query
+            assert self.lookup_function is None, "Guaranteed by PrerequisiteInput.__post_init__."
+            if self._bounds.spatial_connections or self._bounds.temporal_connections:
+                raise ValueError(
+                    "A task cannot have a connection with a custom PrerequisiteInput.query and "
+                    "custom spatial/temporal bounds.  Custom spatial/temporal bounds can generally "
+                    "be replaced by a PrerequisiteQuery override that sets constraint_dimensions."
+                )
         self.dataset_skypix = {}
         self.dataset_other_spatial = {}
         self.dataset_has_timespan = False
@@ -199,6 +210,9 @@ class PrerequisiteFinder:
     This always uses the registry storage class and is never a component
     dataset type.
     """
+
+    query: PrerequisiteQuery | None
+    """A possibly-customized query for the connection."""
 
     lookup_function: (
         Callable[[DatasetType, Registry, DataCoordinate, Sequence[str]], Iterable[DatasetRef]] | None

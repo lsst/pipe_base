@@ -5,6 +5,7 @@ from ._dataset_handle import *
 # all_dimensions_quantum_graph_builder, since that's the only place they are
 # used.
 from ._instrument import *
+from ._prerequisite_query import *
 from ._observation_dimension_packer import *
 from ._quantumContext import *
 from ._status import *

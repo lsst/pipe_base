@@ -38,6 +38,8 @@ from typing import ClassVar
 from lsst.daf.butler import DataCoordinate, DatasetRef, DatasetType, Registry
 from lsst.utils.introspection import find_outside_stacklevel
 
+from ._prerequisite_query import PrerequisiteQuery
+
 
 @dataclasses.dataclass(frozen=True)
 class BaseConnection:
@@ -253,9 +255,24 @@ class PrerequisiteInput(BaseInput):
 
     If no function is specified, the default temporal/spatial lookup will be
     used.
+
+    The more efficient and flexible `query` override hooks is now preferred
+    to `lookupFunction`.
+    """
+
+    query: PrerequisiteQuery | None = None
+    """A hook that customizes how the datasets for this connection are
+    queried for.
+
+    Mutually exclusive with `lookupFunction`.
     """
 
     _connection_type_set: ClassVar[str] = "prerequisiteInputs"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.query is not None and self.lookupFunction is not None:
+            raise ValueError("query and lookupFunction are mutually exclusive.")
 
 
 @dataclasses.dataclass(frozen=True)
