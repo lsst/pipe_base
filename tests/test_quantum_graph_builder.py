@@ -35,7 +35,7 @@ from typing import ClassVar
 import pytest
 
 import lsst.utils.tests
-from lsst.daf.butler import CollectionType, DataCoordinate
+from lsst.daf.butler import CollectionType, DataCoordinate, MissingCollectionError
 from lsst.pipe.base.all_dimensions_quantum_graph_builder import AllDimensionsQuantumGraphBuilder
 from lsst.pipe.base.quantum_graph_builder import InitInputMissingError, QuantumGraphBuilderError
 from lsst.pipe.base.tests.mocks import (
@@ -283,6 +283,16 @@ class ConstructorFallbackTestCase(unittest.TestCase):
                 self.butler,
                 input_collections=[self.helper.input_chain],
                 output_run="out_chain",
+            )
+
+    def test_skip_existing_in_missing_collection_raises(self) -> None:
+        """Test that a nonexistent ``skip_existing_in`` collection raises
+        `~lsst.daf.butler.MissingCollectionError` rather than silently
+        disabling skips.
+        """
+        with pytest.raises(MissingCollectionError):
+            self.helper.make_quantum_graph_builder(
+                output_run="output_run", skip_existing_in=["definitely_missing"]
             )
 
 

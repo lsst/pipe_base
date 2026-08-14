@@ -55,13 +55,14 @@ from lsst.daf.butler import (
     DatasetType,
     DimensionDataAttacher,
     DimensionUniverse,
+    MissingCollectionError,
+    MissingDatasetTypeError,
     NamedKeyDict,
     NamedKeyMapping,
     Quantum,
 )
 from lsst.daf.butler._rubin import generate_uuidv7
 from lsst.daf.butler.datastore.record_data import DatastoreRecordData
-from lsst.daf.butler.registry import MissingCollectionError, MissingDatasetTypeError
 from lsst.daf.butler.utils import globToRegex
 from lsst.utils.logging import LsstLogAdapter, getLogger
 from lsst.utils.timer import timeMethod
@@ -226,14 +227,17 @@ class QuantumGraphBuilder(ABC):
             # attempt some processing as well as all subsequent times, instead
             # of forcing the user to make the first attempt different.
             self.clobber = False
+            # If the output run doesn't exist it's also not going to do
+            # anything in the skip_existing_in list, and we don't have to
+            # worry about it being nested inside some CHAINED collection there.
+            self.skip_existing_in = [c for c in self.skip_existing_in if c != self.output_run]
         # We need to know whether the skip_existing_in collection sequence
         # starts with the output run collection, as an optimization to avoid
-        # queries later.
-        try:
-            skip_existing_in_flat = self.butler.collections.query(self.skip_existing_in, flatten_chains=True)
-        except MissingCollectionError:
-            skip_existing_in_flat = []
+        # queries later. This also checks that the skip-existing-in collections
+        # are valid.
+        skip_existing_in_flat = self.butler.collections.query(self.skip_existing_in, flatten_chains=True)
         if not skip_existing_in_flat:
+            # It's a CHAINED collection with no children.
             self.skip_existing_in = []
         if self.skip_existing_in and self.output_run_exists:
             self.skip_existing_starts_with_output_run = self.output_run == skip_existing_in_flat[0]
