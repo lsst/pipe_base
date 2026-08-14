@@ -64,6 +64,8 @@ pandas = ["pandas"]
 test = ["pytest >= 3.2"]
 mermaid = ["mermaid-py >= 0.7.1"]
 
+# Note: these VCS source declarations affect only the installation of the package
+# using `uv sync | lock` not the distribution or installation using `pip` or `uv pip`
 [tool.uv.sources]
 lsst-resources = { git = "https://github.com/lsst/resources", branch = "main" }
 lsst-utils = { git = "https://github.com/lsst/utils", branch = "main" }

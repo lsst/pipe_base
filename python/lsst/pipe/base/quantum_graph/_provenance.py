@@ -1309,7 +1309,7 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
         return self._bipartite_xgraph.copy(as_view=True)
 
     def make_quantum_table(
-        self, drop_unused_columns: bool = True, expand_caveats: bool = False, as_table: bool = True
+        self, *, drop_unused_columns: bool = True, expand_caveats: bool = False, as_table: bool = True
     ) -> astropy.table.Table | list[dict]:
         """Construct an `astropy.table.Table` with a tabular summary of the
         quanta.
@@ -1329,7 +1329,7 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
 
         Returns
         -------
-        table : `astropy.table.Table` | `list[dict]`
+        table : `astropy.table.Table` | `list` [`dict`]
             A table view of the quantum information.  This only includes
             counts of status categories and caveats, not any per-data-ID
             detail. If `as_table` is False, returns a raw list of rows.
@@ -1389,7 +1389,7 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
                     del table[status.title]
         return table
 
-    def make_exception_table(self, as_table: bool = True) -> astropy.table.Table | list[dict]:
+    def make_exception_table(self, *, as_table: bool = True) -> astropy.table.Table | list[dict]:
         """Construct an `astropy.table.Table` with counts for each exception
         type raised by each task.
 
@@ -1400,7 +1400,7 @@ class ProvenanceQuantumGraph(BaseQuantumGraph):
 
         Returns
         -------
-        table : `astropy.table.Table` | `list[dict]`
+        table : `astropy.table.Table` | `list` [`dict`]
             A table with columns for task label, exception type, and counts,
             or the raw table rows as a list of dicts.
         """
