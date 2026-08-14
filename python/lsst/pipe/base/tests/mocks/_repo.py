@@ -224,6 +224,7 @@ class MockRepo(AbstractContextManager):
         output_run: str = "output_run",
         insert_mocked_inputs: bool = True,
         register_output_dataset_types: bool = True,
+        **kwargs: Any,
     ) -> PredictedQuantumGraph:
         """Make a quantum graph from the pipeline task and internal data
         repository.
@@ -245,6 +246,8 @@ class MockRepo(AbstractContextManager):
             more fine-grained control over the data IDs of the datasets.
         register_output_dataset_types : `bool`, optional
             If `True`, register all output dataset types.
+        **kwargs : `object`
+            Forwarded to `make_quantum_graph_builder`.
 
         Returns
         -------
@@ -257,6 +260,7 @@ class MockRepo(AbstractContextManager):
                 insert_mocked_inputs=insert_mocked_inputs,
                 register_output_dataset_types=register_output_dataset_types,
                 output_run=output_run,
+                **kwargs,
             )
             .finish(output=output, attach_datastore_records=False)
             .assemble()
@@ -268,6 +272,7 @@ class MockRepo(AbstractContextManager):
         output_run: str = "output_run",
         insert_mocked_inputs: bool = True,
         register_output_dataset_types: bool = True,
+        **kwargs: Any,
     ) -> AllDimensionsQuantumGraphBuilder:
         """Make a quantum graph builder from the pipeline task and internal
         data repository.
@@ -286,6 +291,9 @@ class MockRepo(AbstractContextManager):
             more fine-grained control over the data IDs of the datasets.
         register_output_dataset_types : `bool`, optional
             If `True`, register all output dataset types.
+        **kwargs : `object`
+            Additional keyword arguments forwarded to the
+            `AllDimensionsQuantumGraphBuilder` constructor.
 
         Returns
         -------
@@ -306,6 +314,7 @@ class MockRepo(AbstractContextManager):
             self.butler,
             input_collections=[self.input_chain],
             output_run=output_run,
+            **kwargs,
         )
         if register_output_dataset_types:
             self.pipeline_graph.register_dataset_types(self.butler)
