@@ -1,0 +1,10 @@
+Improve `provenance-report` CLI command.
+
+Adds support for a `--format` option flag to choose between default `table` output and a new `json` output format.
+
+When JSON output is requested, the table output is serialized to JSON.
+In this JSON output, each table row is a dict of column-values.
+In this mode, Caveat codes are expanded into an array of JSON objects with `token`, `code`, and `count` keys.
+The JSON output includes a `legend` object to assist in documenting the Caveat codes.
+
+The table output is improved by printing a legend for the Caveat codes.

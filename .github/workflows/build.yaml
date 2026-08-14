@@ -59,7 +59,8 @@ jobs:
         run: |
           butler register-instrument -h && \
           butler transfer-from-graph -h && \
-          butler retrieve-artifacts-for-quanta -h
+          butler retrieve-artifacts-for-quanta -h && \
+          butler provenance-report -h
       - name: Run tests
         shell: bash -l {0}
         run: |

@@ -24,3 +24,6 @@ ups/*.cfgc
 pytest_session.txt
 .coverage
 python/*.dist-info/
+uv.lock
+*.egg-info
+.vscode/
