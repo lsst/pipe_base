@@ -113,9 +113,12 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
                 task_node.label, self._get_data_id(task_node.dimensions, context=f"task {task_node.label!r}")
             )
             input_refs_for_task = self.input_refs.get(task_node.label, {})
+            task_prerequisite_info = self.prerequisite_info[task_node.label]
 
             for read_edge in task_node.iter_all_inputs():
                 if (input_refs := input_refs_for_task.get(read_edge.connection_name)) is not None:
+                    if read_edge.is_prerequisite:
+                        del task_prerequisite_info.finders[read_edge.connection_name]
                     for input_ref in input_refs:
                         if read_edge.is_prerequisite:
                             prereq_key = skeleton.add_prerequisite_node(input_ref)
