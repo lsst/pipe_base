@@ -395,7 +395,7 @@ class AllDimensionsQuantumGraphBuilder(QuantumGraphBuilder):
                                 )
                                 continue
                         if finder.dataset_has_timespan:
-                            if task_prerequisite_info.bounds.spatial_connections:
+                            if task_prerequisite_info.bounds.temporal_connections:
                                 self.log.verbose(
                                     "Deferring prerequisite input %r of task %r to per-quantum processing "
                                     "(for temporal-bounds-connections handling).",
