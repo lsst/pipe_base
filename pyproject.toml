@@ -64,14 +64,12 @@ pandas = ["pandas"]
 test = ["pytest >= 3.2"]
 mermaid = ["mermaid-py >= 0.7.1"]
 
-# Note: these VCS source declarations affect only the installation of the package
-# using `uv sync | lock` not the distribution or installation using `pip` or `uv pip`
-[tool.uv.sources]
-lsst-resources = { git = "https://github.com/lsst/resources", branch = "main" }
-lsst-utils = { git = "https://github.com/lsst/utils", branch = "main" }
-lsst-daf-butler = { git = "https://github.com/lsst/daf_butler", branch = "main" }
-lsst-pex-config = { git = "https://github.com/lsst/pex_config", branch = "main" }
-lsst-sphinxutils = { git = "https://github.com/lsst/sphinxutils", branch = "main" }
+# [tool.uv.sources]
+# lsst-resources = { git = "https://github.com/lsst/resources", branch = "main" }
+# lsst-utils = { git = "https://github.com/lsst/utils", branch = "main" }
+# lsst-daf-butler = { git = "https://github.com/lsst/daf_butler", branch = "main" }
+# lsst-pex-config = { git = "https://github.com/lsst/pex_config", branch = "main" }
+# lsst-sphinxutils = { git = "https://github.com/lsst/sphinxutils", branch = "main" }
 
 [tool.setuptools.packages.find]
 where = ["python"]
