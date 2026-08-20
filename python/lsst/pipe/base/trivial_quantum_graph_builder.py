@@ -58,11 +58,16 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
         Mapping from dimension group to the data ID to use for that dimension
         group.  This is intended to allow the pipeline to switch between
         effectively-equivalent dimensions (e.g. ``group``, ``visit``
-        ``exposure``).
+        ``exposure``).  A dimension group must be keyed here whenever the
+        builder needs to derive a data ID that is not supplied via
+        ``input_refs``: the tasks' own quantum dimensions, outputs, and
+        non-prerequisite input connections that have no ``input_refs`` entries.
     input_refs
         References for input datasets, keyed by task label and then connection
-        name.  This should include all regular overall-input datasets whose
-        data IDs are not included in ``data_ids``.  It may (but need not)
+        name.  For a non-prerequisite input connection, the datasets attached
+        to it are the union of these ``input_refs`` for that connection (if
+        any) and the dataset derived from the ``data_ids`` entry for the
+        connection's dataset-type dimension group. It may (but need not)
         include prerequisite inputs.  Existing intermediate datasets should
         also be provided when they need to be clobbered or used in skip logic.
     dataset_id_modes
@@ -76,7 +81,7 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
     If ``dataset_id_modes`` is provided, ``clobber=True`` will be passed to
     the base builder's constructor, as is this is necessary to avoid spurious
     errors about the affected datasets already existing.  The only effect of
-    this to silence *other* errors about datasets in the output run existing
+    this is to silence *other* errors about datasets in the output run existing
     unexpectedly.
     """
 
@@ -115,6 +120,10 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
             input_refs_for_task = self.input_refs.get(task_node.label, {})
             task_prerequisite_info = self.prerequisite_info[task_node.label]
 
+            # Invariant: every non-prerequisite data ID that appears in the
+            # graph comes from either ``data_ids`` or ``input_refs``;
+            # prerequisite inputs are the exception (their data IDs come from
+            # ``input_refs`` or the per-quantum search).
             for read_edge in task_node.iter_all_inputs():
                 if (input_refs := input_refs_for_task.get(read_edge.connection_name)) is not None:
                     if read_edge.is_prerequisite:
@@ -142,23 +151,24 @@ class TrivialQuantumGraphBuilder(QuantumGraphBuilder):
                 if read_edge.is_prerequisite:
                     continue
                 dataset_type_node = subgraph.dataset_types[read_edge.parent_dataset_type_name]
-                data_id = self._get_data_id(
-                    dataset_type_node.dimensions,
-                    context=f"input {task_node.label}.{read_edge.connection_name}",
-                )
-                input_key = skeleton.add_dataset_node(
-                    read_edge.parent_dataset_type_name,
-                    data_id,
-                )
-                skeleton.add_input_edge(quantum_key, input_key)
-                if subgraph.producer_of(read_edge.parent_dataset_type_name) is None:
-                    if skeleton.get_dataset_ref(input_key) is None:
-                        ref = self.butler.find_dataset(dataset_type_node.dataset_type, data_id)
-                        if ref is not None:
-                            skeleton.set_dataset_ref(ref)
-                self.log.info(
-                    f"Added regular input {task_node.label}.{read_edge.connection_name} for {data_id}"
-                )
+                # For a non-prerequisite input connection we union the datasets
+                # supplied via `input_refs` (if any) with the dataset derived
+                # from `data_ids`.
+                if dataset_type_node.dimensions in self.data_ids:
+                    data_id = self._get_data_id(
+                        dataset_type_node.dimensions,
+                        context=f"input {task_node.label}.{read_edge.connection_name}",
+                    )
+                    input_key = skeleton.add_dataset_node(read_edge.parent_dataset_type_name, data_id)
+                    skeleton.add_input_edge(quantum_key, input_key)
+                    if subgraph.producer_of(read_edge.parent_dataset_type_name) is None:
+                        if skeleton.get_dataset_ref(input_key) is None:
+                            ref = self.butler.find_dataset(dataset_type_node.dataset_type, data_id)
+                            if ref is not None:
+                                skeleton.set_dataset_ref(ref)
+                    self.log.info(
+                        f"Added regular input {task_node.label}.{read_edge.connection_name} for {data_id}"
+                    )
 
             for write_edge in task_node.iter_all_outputs():
                 dataset_type_node = subgraph.dataset_types[write_edge.parent_dataset_type_name]

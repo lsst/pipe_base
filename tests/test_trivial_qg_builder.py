@@ -326,5 +326,104 @@ class TestTrivialQuantumGraphBuilderPrerequisiteTests(unittest.TestCase):
         )
 
 
+class TrivialQuantumGraphBuilderInputRefsUnionTestCase(unittest.TestCase):
+    """Tests for passing extra inputs with additional data IDs to
+    `TrivialQuantumGraphBuilder` unions ``input_refs``.
+
+    This covers the Rapid Analysis / AOS use case where processing from the
+    other member of an WFS pair is provided as an input.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.helper = InMemoryRepo("base.yaml")
+        cls.helper.add_task(
+            "a",
+            dimensions=["detector"],
+            inputs={
+                "pair": DynamicConnectionConfig(
+                    dataset_type_name="dataset_pair", dimensions=["detector"], multiple=True
+                ),
+                "ext": DynamicConnectionConfig(
+                    dataset_type_name="dataset_ext", dimensions=["detector", "band"], multiple=True
+                ),
+            },
+        )
+        # Use the general-purpose builder: it inserts the overall inputs
+        # (dataset_pair and dataset_ext) at all of their data IDs and registers
+        # the output dataset type.
+        cls.general_qg = cls.helper.make_quantum_graph()
+        pair_by_detector = {
+            data_id["detector"]: data_id for data_id in cls.general_qg.datasets_by_type["dataset_pair"].keys()
+        }
+        cls.det_a = pair_by_detector[1]
+        cls.det_b = pair_by_detector[2]
+        cls.pair_ref_b = cls.helper.butler.get_dataset(
+            cls.general_qg.datasets_by_type["dataset_pair"][cls.det_b]
+        )
+        cls.ext_data_id = next(
+            data_id
+            for data_id in cls.general_qg.datasets_by_type["dataset_ext"].keys()
+            if data_id["detector"] == 1
+        )
+        cls.ext_ref = cls.helper.butler.get_dataset(
+            cls.general_qg.datasets_by_type["dataset_ext"][cls.ext_data_id]
+        )
+
+    def _make_builder(
+        self,
+        data_ids: dict,
+        input_refs: dict,
+    ) -> TrivialQuantumGraphBuilder:
+        return TrivialQuantumGraphBuilder(
+            self.helper.pipeline_graph,
+            self.helper.butler,
+            data_ids=data_ids,
+            input_refs=input_refs,
+            output_run="trivial_output_run",
+            input_collections=self.general_qg.header.inputs,
+        )
+
+    def test_input_refs_alone_without_data_ids_key(self) -> None:
+        """Test an input supplied via ``input_refs`` whose dimension group is
+        not in ``data_ids``.
+        """
+        builder = self._make_builder(
+            data_ids={self.det_a.dimensions: self.det_a},
+            input_refs={"a": {"ext": [self.ext_ref]}},
+        )
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        self.assertEqual(qg.datasets_by_type["dataset_ext"].keys(), {self.ext_data_id})
+
+    def test_input_refs_union(self) -> None:
+        """Test passing an input as both input_refs and a (different)
+        data ID.
+        """
+        builder = self._make_builder(
+            data_ids={self.det_a.dimensions: self.det_a},
+            input_refs={"a": {"pair": [self.pair_ref_b], "ext": [self.ext_ref]}},
+        )
+        qg = builder.finish(attach_datastore_records=False).assemble()
+        self.assertEqual(qg.datasets_by_type["dataset_pair"].keys(), {self.det_a, self.det_b})
+
+    def test_missing_input_nulls_qg(self) -> None:
+        """Test if there is neither a data ID nor an input_ref for a regular
+        input connection, the usual adjustQuantum logic drops the quantum and
+        (in this case) we get an empty QG.
+        """
+        builder = self._make_builder(
+            data_ids={self.det_a.dimensions: self.det_a},
+            # No key for the dimensions of the data ID.
+            input_refs={"a": {"pair": [self.pair_ref_b]}},
+        )
+        self.assertEqual(builder.finish(attach_datastore_records=False).header.n_quanta, 0)
+        builder = self._make_builder(
+            data_ids={self.det_a.dimensions: self.det_a},
+            # No refs for the dimensions of the data ID.
+            input_refs={"a": {"pair": [self.pair_ref_b], "ext": []}},
+        )
+        self.assertEqual(builder.finish(attach_datastore_records=False).header.n_quanta, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
