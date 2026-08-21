@@ -30,6 +30,7 @@ from __future__ import annotations
 __all__ = ("PrerequisiteQuery",)
 
 from collections.abc import Callable, Iterable, Set
+from typing import TYPE_CHECKING
 
 from lsst.daf.butler import (
     Butler,
@@ -39,6 +40,9 @@ from lsst.daf.butler import (
     DimensionGroup,
 )
 from lsst.daf.butler.queries import Query
+
+if TYPE_CHECKING:
+    from .pipeline_graph import TaskNode
 
 
 class PrerequisiteQuery:
@@ -62,7 +66,7 @@ class PrerequisiteQuery:
     -----
     This class is designed to be used directly in simple cases where one or
     more construction parameters can be used to get the desired behavior.
-    For more complicated cases
+    For more complicated cases this class should be subclassed.
     """
 
     def __init__(
@@ -133,6 +137,7 @@ class PrerequisiteQuery:
         dataset_type: DatasetType,
         constraint_data_ids: Set[DataCoordinate],
         quantum_data_ids: Set[DataCoordinate],
+        task_node: TaskNode,
     ) -> dict[DataCoordinate, list[DatasetRef]]:
         """Run the query for this prerequisite input connection.
 
@@ -150,6 +155,9 @@ class PrerequisiteQuery:
         quantum_data_ids
             The data IDs of all quanta that need prerequisites attached.  May
             be the same object as `constraint_data_ids`.
+        task_node
+            The node for this task in the pipeline graph.  Use
+            ``task_node.config`` for configuration-dependent queries.
 
         Returns
         -------
@@ -172,7 +180,7 @@ class PrerequisiteQuery:
         """
         return NotImplemented
 
-    def augment(self, query: Query) -> Query:
+    def augment(self, query: Query, task_node: TaskNode) -> Query:
         """Augment the default query with additional constraints.
 
         Parameters
@@ -180,6 +188,9 @@ class PrerequisiteQuery:
         query
             Default query, with the dataset type search and constraint
             data IDs joined in.
+        task_node
+            The node for this task in the pipeline graph.  Use
+            ``task_node.config`` for configuration-dependent queries.
 
         Notes
         -----
