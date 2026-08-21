@@ -47,11 +47,6 @@ class PrerequisiteQuery:
 
     Parameters
     ----------
-    run_after_adjust_all_quanta
-        If `True`, the query will be run after the
-        `~PipelineTaskConnections.adjust_all_quanta` hook has been called,
-        potentially limiting the number of quanta that need need to be
-        processed.
     constraint_dimensions
         The dimensions that should be used as a data ID constraint for the
         query.  The default is to use the quantum dimensions.  Subclasses
@@ -73,11 +68,9 @@ class PrerequisiteQuery:
     def __init__(
         self,
         *,
-        run_after_adjust_all_quanta: bool = False,
         constraint_dimensions: Iterable[str] | None = None,
         augment: Callable[[Query], Query] | None = None,
     ):
-        self._run_after_adjust_all_quanta = run_after_adjust_all_quanta
         self._constraint_dimensions = (
             frozenset(constraint_dimensions) if constraint_dimensions is not None else None
         )
@@ -134,19 +127,6 @@ class PrerequisiteQuery:
         """
         return False
 
-    @property
-    def run_after_adjust_all_quanta(self) -> bool:
-        """Whether to query for this prerequisite input before or after
-        calling `~PipelineTaskConnections.adjust_all_quanta` (`bool`).
-
-        When the query is run first, ``adjust_all_quanta`` can be used to
-        redistribute those datasets across quanta, or filter quanta based on
-        their presence.  When the query is run afterwards, the list of quantum
-        data IDs passed to `query` may be smaller, allowing it to be more
-        efficient.
-        """
-        return self._run_after_adjust_all_quanta
-
     def run(
         self,
         butler: Butler,
@@ -185,17 +165,8 @@ class PrerequisiteQuery:
 
         Notes
         -----
-        If the quantum graph build is configured to skip already-completed
-        data IDs, those quantum data IDs will be not be included here, but
-        their counterparts in ``constraint_data_ids`` may be if those have
-        different dimensions.  If `run_after_adjust_all_quanta` is `True`,
-        quanta it filtered out by `~PipelineTaskConnections.adjust_all_quanta`
-        will not be included either. This method always runs before
-        `~PipelineTaskConnections.adjustQuantum` and hence quanta filtered out
-        later by that method are always included here.
-
         The default implementation of this method actually just returns
-        `NotImplemented`, whith the actual default behavior implemented in
+        `NotImplemented`, with the actual default behavior implemented in
         the quantum graph builder itself, because this opens up optimizations
         that are not available to custom implementations.
         """
