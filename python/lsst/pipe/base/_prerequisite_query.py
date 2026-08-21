@@ -112,22 +112,35 @@ class PrerequisiteQuery:
         yield a different result if the overall build's data query or
         input-dataset queries limited the set of detectors to something other
         than "all of them".
+
+        In order to associate the results of the query with quanta, the
+        query results need to include quantum data IDs, so the actual
+        constraint data IDs passed to `run` are a union of what's returned
+        here and the quantum dimensions.
         """
         if self._constraint_dimensions is not None:
             return quantum_dimensions.universe.conform(self._constraint_dimensions)
         return quantum_dimensions
 
-    @property
-    def needs_constraint_dimension_records(self) -> bool:
-        """If `True`, the ``constraint_data_ids`` argument `query` will be
-        guaranteed to have dimension records attached to all data IDs.
-        """
-        return False
+    def needs_dimension_records(
+        self, dataset_type_dimensions: DimensionGroup, constraint_dimensions: DimensionGroup
+    ) -> bool:
+        """Report whether the ``data_ids`` argument to `run` needs to have
+        dimension records attached to all data IDs.
 
-    @property
-    def needs_quantum_dimension_records(self) -> bool:
-        """If `True`, the ``quantum_data_ids`` argument `query` will be
-        guaranteed to have dimension records attached to all data IDs.
+        Parameters
+        ----------
+        dataset_type_dimensions
+            The dimensions of the prerequisite input itself.
+        constraint_dimensions
+            The dimensions of the data IDs that will be passed to `run`.
+
+        Notes
+        -----
+        When calling delegating to ``super().run``, the
+        ``constraint_dimensions`` passed here should correspond to what
+        ``super().run`` will be called with; this does not need to be the same
+        as what `get_constraint_dimensions` returns.
         """
         return False
 
@@ -135,8 +148,7 @@ class PrerequisiteQuery:
         self,
         butler: Butler,
         dataset_type: DatasetType,
-        constraint_data_ids: Set[DataCoordinate],
-        quantum_data_ids: Set[DataCoordinate],
+        data_ids: Set[DataCoordinate],
         task_node: TaskNode,
     ) -> dict[DataCoordinate, list[DatasetRef]]:
         """Run the query for this prerequisite input connection.
@@ -147,14 +159,13 @@ class PrerequisiteQuery:
             A read-only butler initialized with the QG build's input
             collections as its default collections.
         dataset_type
-            The prerequisite input's dataset type, with any storage class
-            overrides requested by the connection.
-        constraint_data_ids
-            Data IDs to be used as a constraint on the query, with the
-            dimensions returned by `get_constraint_dimensions`.
-        quantum_data_ids
-            The data IDs of all quanta that need prerequisites attached.  May
-            be the same object as `constraint_data_ids`.
+            The prerequisite input's dataset type, with the standard dataset
+            type for the pipeline graph (connection-level storage class
+            overrides are applied later).
+        data_ids
+            Data IDs to be used as a constraint on the query.  In most cases
+            (see notes below) the dimensions of these data IDs is the union
+            of `get_constraint_dimensions` and the task's quantum dimensions.
         task_node
             The node for this task in the pipeline graph.  Use
             ``task_node.config`` for configuration-dependent queries.
@@ -173,12 +184,29 @@ class PrerequisiteQuery:
 
         Notes
         -----
-        The default implementation of this method actually just returns
-        `NotImplemented`, with the actual default behavior implemented in
-        the quantum graph builder itself, because this opens up optimizations
-        that are not available to custom implementations.
+        When calling delegating to ``super().run``, the
+        ``constraint_dimensions`` do not need to be the same as what
+        `get_constraint_dimensions` returns, but
+        ``super().needs_dimension_records`` needs to be consulted on whether
+        dimensions records need to be provided.
         """
-        return NotImplemented
+        if not data_ids:
+            return {}
+        # TODO[DM-55797]: this base implementation should also handle
+        # non-common skypix lookups, by using sphgeom to convert regions to
+        # skypix ID ranges. Or maybe it could be another standard
+        # implementation that we attach instead of this one in
+        # PrerequisiteFinder for those combinations of dimensions.
+        edge_dimensions = task_node.dimensions | dataset_type.dimensions
+        result: dict[DataCoordinate, list[DatasetRef]] = {}
+        with butler.query() as query:
+            query = query.join_data_coordinates(data_ids).join_dataset_search(dataset_type)
+            query = self.augment(query, task_node)
+            for row in query.general(edge_dimensions, dataset_fields={dataset_type.name: ...}).iter_tuples(
+                dataset_type
+            ):
+                result.setdefault(row.data_id.subset(task_node.dimensions), []).append(row.refs[0])
+        return result
 
     def augment(self, query: Query, task_node: TaskNode) -> Query:
         """Augment the default query with additional constraints.
