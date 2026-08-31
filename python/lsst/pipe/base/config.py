@@ -265,9 +265,34 @@ class PipelineTaskConfig(pexConfig.Config, metaclass=PipelineTaskConfigMeta):
                 if subConfig.dataId is None:
                     if subConfig.file:
                         for configFile in subConfig.file:
-                            overrides.addFileOverride(os.path.expandvars(configFile))
+                            configPath = os.path.expandvars(configFile)
+                            try:
+                                overrides.addFileOverride(configPath)
+                            except Exception as e:
+                                e.add_note(
+                                    f"Applying config override to task '{label}' from file '{configPath}'"
+                                )
+                                raise
                     if subConfig.python is not None:
-                        overrides.addPythonOverride(subConfig.python)
+                        try:
+                            overrides.addPythonOverride(subConfig.python)
+                        except Exception as e:
+                            e.add_note(
+                                f"Applying config override to task '{label}' from "
+                                "python: '{subConfig.python}'"
+                            )
+                            raise
                     for key, value in subConfig.rest.items():
-                        overrides.addValueOverride(key, value)
-        overrides.applyTo(self)
+                        try:
+                            overrides.addValueOverride(key, value)
+                        except Exception as e:
+                            e.add_note(
+                                f"Applying config override to task '{label}' for "
+                                "key '{key}' with value '{value}'"
+                            )
+                            raise
+        try:
+            overrides.applyTo(self)
+        except Exception as e:
+            e.add_note(f"Applying config overrides to task '{label}'")
+            raise
