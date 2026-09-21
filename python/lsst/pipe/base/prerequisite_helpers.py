@@ -629,6 +629,7 @@ class _ConnectionSkyPixBoundsBuilder(SkyPixBoundsBuilder):
         self._dimensions = dimensions
         self._regions: list[Region] = []
         if task_node.dimensions.spatial:
+            assert quantum_data_id.region is not None  # For Mypy.
             self._regions.append(quantum_data_id.region)
         self._dataset_type_names: set[str] = set()
         for connection_name in bounds_connections:
@@ -642,6 +643,7 @@ class _ConnectionSkyPixBoundsBuilder(SkyPixBoundsBuilder):
 
     def handle_dataset(self, parent_dataset_type_name: str, data_id: DataCoordinate) -> None:
         if parent_dataset_type_name in self._dataset_type_names:
+            assert data_id.region is not None  # For Mypy.
             self._regions.append(data_id.region)
 
     def finish(self) -> dict[str, RangeSet]:

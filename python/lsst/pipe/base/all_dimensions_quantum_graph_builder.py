@@ -1363,7 +1363,9 @@ class CrossSystemDataIdGenerator(DataIdGenerator):
         source_pixelization = self.source_skypix.pixelization
         remainder_pixelization = self.remainder_skypix.pixelization
         for source_data_id in source_branch.data_ids:
-            source_region = source_pixelization.pixel(source_data_id[self.source_skypix.name])
+            pixel_number = source_data_id[self.source_skypix.name]
+            assert isinstance(pixel_number, int)
+            source_region = source_pixelization.pixel(pixel_number)
             for begin, end in remainder_pixelization.envelope(source_region):
                 for index in range(begin, end):
                     target_data_id = DataCoordinate.standardize(
