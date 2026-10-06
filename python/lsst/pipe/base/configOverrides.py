@@ -332,7 +332,15 @@ class ConfigOverrides:
         for otype, override in self._overrides:
             if otype is OverrideTypes.File:
                 with override.open("r") as buffer:
-                    config.loadFromStream(buffer, filename=override.ospath, extraLocals=extraLocals)
+                    # Pass the ResourcePath rather than ``ospath``: an override
+                    # may be a non-file URI (e.g. an ``eups://`` config proxied
+                    # to a ``resource://`` package resource in an EUPS-less
+                    # environment) which has no local OS path. loadFromString
+                    # accepts a ResourcePathExpression and resolves any nested
+                    # relative ``config.load`` against the URI's directory.
+                    # (loadFromStream passes ``filename`` straight to
+                    # ``compile`` and so cannot accept a ResourcePath.)
+                    config.loadFromString(buffer.read(), filename=override, extraLocals=extraLocals)
             elif otype is OverrideTypes.Value:
                 field, value = override
                 if isinstance(value, str):
