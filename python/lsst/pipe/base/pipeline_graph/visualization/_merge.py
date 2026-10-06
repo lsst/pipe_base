@@ -173,11 +173,12 @@ def merge_graph_intermediates(
             storage_class_name=merge_key.storage_class_name,
             task_class_name=merge_key.task_class_name,
             dimensions=merge_key.dimensions,
+            is_prerequisite=merge_key.is_prerequisite,
         )
         for parent in merge_key.parents:
-            xgraph.add_edge(replacements.get(parent, parent), new_node_key)
+            _add_merged_edge(xgraph, replacements.get(parent, parent), new_node_key)
         for child in merge_key.children:
-            xgraph.add_edge(new_node_key, replacements.get(child, child))
+            _add_merged_edge(xgraph, new_node_key, replacements.get(child, child))
         for member in members:
             replacements[member] = new_node_key
         xgraph.remove_nodes_from(members)
@@ -209,6 +210,11 @@ class _MergeKey:
     """Name of the task class for the nodes being considered for merging, or
     `None` if task classes are not included in the similarity criteria or
     this is a dataset type node group.
+    """
+
+    is_prerequisite: bool
+    """Whether the nodes being considered for merging are prerequisite input
+    dataset types.
     """
 
     children: frozenset[Any]
@@ -249,8 +255,23 @@ class _MergeKey:
             dimensions=state.get("dimensions"),
             storage_class_name=(state.get("storage_class_name") if options.storage_classes else None),
             task_class_name=(state.get("task_class_name") if options.task_classes else None),
+            is_prerequisite=state.get("is_prerequisite", False),
             children=frozenset(children),
         )
+
+
+def _add_merged_edge(
+    xgraph: networkx.DiGraph | networkx.MultiDiGraph,
+    a: NodeKey | MergedNodeKey,
+    b: NodeKey | MergedNodeKey,
+) -> None:
+    """Add an edge that involves at least one merged node.
+
+    Edges from prerequisite dataset type nodes are marked as prerequisite
+    edges, since the original edge attributes are not carried over when
+    nodes are merged.
+    """
+    xgraph.add_edge(a, b, is_prerequisite=xgraph.nodes[a].get("is_prerequisite", False))
 
 
 def _make_tree_merge_groups(
@@ -354,6 +375,8 @@ def _apply_tree_merges(
                 storage_class_name=merge_key.storage_class_name,
                 task_class_name=merge_key.task_class_name,
                 dimensions=merge_key.dimensions,
+                is_prerequisite=merge_key.is_prerequisite,
             )
-            xgraph.add_edges_from(new_edges)
+            for a, b in new_edges:
+                _add_merged_edge(xgraph, a, b)
     xgraph.remove_nodes_from(replacements.keys())

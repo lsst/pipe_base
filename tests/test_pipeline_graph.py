@@ -1226,6 +1226,43 @@ class PipelineGraphTestCase(unittest.TestCase):
             dataset_types=True,
         )
 
+    def test_merged_prerequisite_visualization(self) -> None:
+        """Test that merging dataset type nodes for visualization keeps
+        prerequisite inputs separate from regular inputs and preserves their
+        prerequisite status.
+        """
+        self.a_config.inputs["input2"] = DynamicConnectionConfig(dataset_type_name="input_2")
+        self.a_config.prerequisite_inputs["prereq1"] = DynamicConnectionConfig(dataset_type_name="prereq_1")
+        self.a_config.prerequisite_inputs["prereq2"] = DynamicConnectionConfig(dataset_type_name="prereq_2")
+        graph = PipelineGraph()
+        graph.add_task("b", DynamicTestPipelineTask, self.b_config)
+        graph.add_task("a", DynamicTestPipelineTask, self.a_config)
+        expected = {
+            frozenset({"input_1", "input_2"}): False,
+            frozenset({"prereq_1", "prereq_2"}): True,
+        }
+        for resolve in (False, True):
+            if resolve:
+                graph.resolve(MockRegistry(dimensions=self.dimensions, dataset_types={}))
+            with self.subTest(resolved=resolve):
+                xgraph, _ = visualization.parse_display_args(graph, dataset_types=True)
+                merged = {
+                    frozenset(member.name for member in node): state["is_prerequisite"]
+                    for node, state in xgraph.nodes.items()
+                    if isinstance(node, visualization.MergedNodeKey)
+                }
+                self.assertEqual(merged, expected)
+                for node in xgraph.nodes:
+                    if isinstance(node, visualization.MergedNodeKey):
+                        for _, _, data in xgraph.out_edges(node, data=True):
+                            self.assertEqual(data["is_prerequisite"], xgraph.nodes[node]["is_prerequisite"])
+                stream = io.StringIO()
+                visualization.show_dot(graph, stream, dataset_types=True)
+                self.assertEqual(stream.getvalue().count('[style="dashed"]'), 1)
+                stream = io.StringIO()
+                visualization.show_mermaid(graph, stream, dataset_types=True)
+                self.assertEqual(stream.getvalue().count("stroke-dasharray"), 1)
+
     def test_select(self) -> None:
         """Test PipelineGraph.select_tasks."""
         # New task c is downstream of a and parallel (unrelated) to b.

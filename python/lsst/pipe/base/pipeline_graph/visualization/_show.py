@@ -35,7 +35,7 @@ from typing import Any, Literal, TextIO
 
 import networkx
 
-from .._nodes import NodeKey
+from .._nodes import NodeKey, NodeType
 from .._pipeline_graph import PipelineGraph
 from .._tasks import TaskInitNode, TaskNode
 from ._formatting import GetNodeText, get_node_symbol
@@ -172,6 +172,9 @@ def parse_display_args(
                 if edge.connection_name not in t.outputs and not xgraph.out_degree(edge.dataset_type_key)
             )
 
+    if dataset_types:
+        _annotate_prerequisite_nodes(xgraph)
+
     if merge_input_trees:
         merge_graph_input_trees(xgraph, options, depth=merge_input_trees)
     if merge_output_trees:
@@ -180,6 +183,24 @@ def parse_display_args(
         merge_graph_intermediates(xgraph, options)
 
     return xgraph, options
+
+
+def _annotate_prerequisite_nodes(xgraph: networkx.DiGraph | networkx.MultiDiGraph) -> None:
+    """Ensure every dataset type node has an ``is_prerequisite`` attribute.
+
+    Resolved dataset type nodes already carry this attribute, but unresolved
+    ones do not, so it is derived from their outgoing edges instead.
+
+    Parameters
+    ----------
+    xgraph : `networkx.DiGraph` or `networkx.MultiDiGraph`
+        Graph to be processed; modified in-place.
+    """
+    for node, state in xgraph.nodes.items():
+        if node.node_type is NodeType.DATASET_TYPE and "is_prerequisite" not in state:
+            state["is_prerequisite"] = any(
+                data.get("is_prerequisite", False) for _, _, data in xgraph.out_edges(node, data=True)
+            )
 
 
 def show(
