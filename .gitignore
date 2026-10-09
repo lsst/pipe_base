@@ -27,3 +27,4 @@ python/*.dist-info/
 uv.lock
 *.egg-info
 .vscode/
+bin/

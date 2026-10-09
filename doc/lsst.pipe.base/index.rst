@@ -69,6 +69,16 @@ Running Pipelines
 
    recording-provenance.rst
 
+.. _lsst-pipe-base-analyzing-runs:
+
+Runtime Analysis
+----------------
+
+.. toctree::
+   :maxdepth: 1
+
+   runtime-analyzer.rst
+
 .. _lsst.pipe.base-contributing:
 
 Contributing

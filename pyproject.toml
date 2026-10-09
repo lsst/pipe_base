@@ -63,6 +63,8 @@ pipe_base = "lsst.pipe.base.cli:get_cli_subcommands"
 pandas = ["pandas"]
 test = ["pytest >= 3.2"]
 mermaid = ["mermaid-py >= 0.7.1"]
+runtime = ["click >=8,<9", "matplotlib", "pyarrow >= 20"]
+kde = ["scipy"]
 
 # [tool.uv.sources]
 # lsst-resources = { git = "https://github.com/lsst/resources", branch = "main" }
@@ -79,6 +81,7 @@ zip-safe = true
 
 [tool.setuptools.package-data]
 "lsst.pipe.base" = ["py.typed", "cli/resources.yaml"]
+"lsst.pipe.base._runtime_analyzer" = ["py.typed"]
 
 [tool.setuptools.dynamic]
 version = { attr = "lsst_versions.get_lsst_version" }
