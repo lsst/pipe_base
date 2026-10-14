@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import uuid
 from contextlib import ExitStack
-from importlib.util import find_spec
 from pathlib import Path
 from unittest import mock
 
@@ -27,7 +26,18 @@ from .support import (  # noqa: E402
     record_scenario_cli,
 )
 
-_HAS_CLICK = find_spec("click") is not None
+
+def _dep_present(name: str) -> bool:
+    """Return True if a module can actually be imported."""
+    try:
+        __import__(name)
+    except ImportError:
+        return False
+    return True
+
+
+_HAS_CLICK = _dep_present("click")
+_HAS_MPL = _dep_present("matplotlib")
 
 
 class TestCliHelp:
@@ -96,6 +106,7 @@ class TestBottleneckCommand:
         assert 'SLOW' in outlier_section
 
 
+@pytest.mark.skipif(not _HAS_CLICK, reason="click not installed")
 class TestSourceProducerUnification:
     """CLI-4: all graph/Butler source shapes route through
     extract_merged_runtime_table (the merged-table producer).
@@ -287,6 +298,7 @@ class TestPlotOutputDirMessage:
     """CLI-5: the plot command must state the resolved output directory."""
 
     @pytest.mark.skipif(not _HAS_CLICK, reason="click not installed")
+    @pytest.mark.skipif(not _HAS_MPL, reason="matplotlib not installed")
     def test_plot_reports_resolved_dir(self, tmp_path: Path,
                                        make_task_analyzer) -> None:
         analyzer = make_task_analyzer([('TaskA', 1.0), ('TaskA', 2.0)])

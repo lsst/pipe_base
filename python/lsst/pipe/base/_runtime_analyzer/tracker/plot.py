@@ -14,6 +14,24 @@ if TYPE_CHECKING:
 _PLOTS_DIR = Path.home() / ".local" / "share" / "runtime-analyzer-plots"
 
 
+def _agg_backend() -> None:
+    """Import matplotlib and pin the Agg backend.
+
+    Raises
+    ------
+    ImportError
+        Raised if ``matplotlib`` is not installed.
+    """
+    try:
+        import matplotlib
+    except ModuleNotFoundError:  # pragma: no cover
+        raise ImportError(
+            "Tracker plots require 'matplotlib'. Install pipe_base with "
+            "the [runtime] extra."
+        ) from None
+    matplotlib.use("Agg")
+
+
 def plot_trend(
     task_label: str,
     metric: str,
@@ -47,8 +65,7 @@ def plot_trend(
     fig : `matplotlib.figure.Figure`
         Trend line figure.
     """
-    import matplotlib
-    matplotlib.use("Agg")
+    _agg_backend()
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -151,8 +168,7 @@ def plot_heatmap(
     fig : `matplotlib.figure.Figure`
         Heatmap figure.
     """
-    import matplotlib
-    matplotlib.use("Agg")
+    _agg_backend()
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -252,8 +268,7 @@ def plot_delta_bar(
     fig : `matplotlib.figure.Figure`
         Delta bar chart figure.
     """
-    import matplotlib
-    matplotlib.use("Agg")
+    _agg_backend()
     import matplotlib.pyplot as plt
     import numpy as np
 

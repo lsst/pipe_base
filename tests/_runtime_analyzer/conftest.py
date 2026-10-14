@@ -15,13 +15,33 @@ from functools import partial
 
 import pytest
 
-pytest.importorskip("pyarrow")  # provided by the [runtime] extra
+# The support builders import the pyarrow-backed table module; gate the
+# import on actual importability (importorskip here would raise Skipped
+# during conftest import and abort collection).  Each test module that
+# needs pyarrow skips itself via its own module-level importorskip.
+try:
+    import pyarrow  # noqa: F401
+except ImportError:
+    _HAS_PYARROW = False
+else:
+    _HAS_PYARROW = True
 
-from . import support  # noqa: E402
+if _HAS_PYARROW:
+    from . import support  # noqa: E402
+else:
+    support = None
 
-make_analyzer = pytest.fixture(lambda: support.make_analyzer)
-make_task_analyzer = pytest.fixture(lambda: support.make_task_analyzer)
-cache_table = pytest.fixture(lambda: support.cache_table)
+
+def _support() -> object:
+    """Return the shared builders, skipping if their deps are missing."""
+    if support is None:
+        pytest.skip("requires pyarrow (pipe_base [runtime] extra)")
+    return support
+
+
+make_analyzer = pytest.fixture(lambda: _support().make_analyzer)
+make_task_analyzer = pytest.fixture(lambda: _support().make_task_analyzer)
+cache_table = pytest.fixture(lambda: _support().cache_table)
 write_cache = pytest.fixture(
-    lambda tmp_path: partial(support.write_cache, tmp_path),
+    lambda tmp_path: partial(_support().write_cache, tmp_path),
 )

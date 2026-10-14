@@ -26,7 +26,7 @@ except ImportError as exc:  # pragma: no cover
 from .cli_helpers import PLOT_NAMES, TABLE_NAMES
 from .console import format_table
 from .core import QuantumRuntimeAnalyzer
-from .plot import get_available_plots, get_plot_by_name
+from .plot import _ensure_matplotlib, get_available_plots, get_plot_by_name
 from .runtime_table import QuantumRuntimeTable, extract_merged_runtime_table
 
 # Tracker imports (database and history; the tracker plot/format modules
@@ -521,6 +521,9 @@ def _render_plots(
         Y-scale mode passed to box plots: "auto", "log", "symlog" or
         "linear".
     """
+    # Guard first so the absence of the [runtime] extra yields the
+    # standard informative message instead of a bare ModuleNotFoundError.
+    _ensure_matplotlib()
     import matplotlib
 
     output_dir = Path(output_plot) if output_plot else Path('./plots')

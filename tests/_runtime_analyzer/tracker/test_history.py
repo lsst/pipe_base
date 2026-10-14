@@ -6,6 +6,13 @@ import time
 
 import pytest
 
+try:
+    import click  # noqa: F401
+
+    _HAS_CLICK = True
+except ImportError:
+    _HAS_CLICK = False
+
 from lsst.pipe.base._runtime_analyzer.tracker.database import record_run
 from lsst.pipe.base._runtime_analyzer.tracker.history import (
     _auto_compare,
@@ -367,6 +374,7 @@ class TestCheckAlertsFromRunLabel:
         assert to_runs_restricted == {"h2"}
 
 
+@pytest.mark.skipif(not _HAS_CLICK, reason="click not installed")
 class TestAutoCompare:
     """TRK-4: _auto_compare renders and returns a comparison table."""
 

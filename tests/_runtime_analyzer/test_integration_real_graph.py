@@ -47,6 +47,11 @@ from lsst.pipe.base.quantum_graph._provenance import (
     ProvenanceQuantumScanStatus,
 )
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
+
+# ``simpleQGraph`` pulls in daf_butler's CLI test utilities, which import
+# click at module level.
+pytest.importorskip("click")
+
 from lsst.pipe.base.tests import simpleQGraph
 
 pytest.importorskip("pyarrow")  # provided by the [runtime] extra
