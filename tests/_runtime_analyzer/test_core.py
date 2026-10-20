@@ -1069,7 +1069,7 @@ class TestTableProducers:
         # runtime_table and are NOT re-exported here.
         assert not hasattr(console_module, "QuantumRuntimeTable")
 
-    def test_module_level_imports_are_stdlib_and_numpy_only(self) -> None:
+    def test_module_level_imports_stay_within_contract(self) -> None:
         import ast
         import pathlib
 
@@ -1086,17 +1086,25 @@ class TestTableProducers:
                 if isinstance(node, ast.Import):
                     top.update(alias.name for alias in node.names)
                 elif isinstance(node, ast.ImportFrom):
-                    top.add(node.module or "__future__")
+                    # Relative (intra-pipe_base) imports are recorded with
+                    # a marker; absolute ones by name.
+                    if node.level:
+                        top.add(f"relative:{node.module or ''}")
+                    else:
+                        top.add(node.module or "__future__")
                 elif isinstance(node, ast.Try):
                     collect(node.body)
 
         collect(tree.body)
         assert top == {"__future__", "collections.abc", "dataclasses",
-                       "datetime", "json", "pathlib", "numpy", "typing",
-                       "uuid", "pyarrow", "pyarrow.parquet"}
-        # No runtime_analyzer-internal module-level imports: the file stays
-        # a drop-in upstream candidate.
-        assert not [m for m in top if m.startswith("lsst.")]
+                       "datetime", "json", "logging", "pathlib", "numpy",
+                       "typing", "uuid", "pyarrow", "pyarrow.parquet",
+                       "lsst.daf.butler",
+                       "relative:automatic_connection_constants",
+                       "relative:quantum_graph"}
+        # Intra-pipe_base imports stay relative (ingest_graph convention),
+        # and the only cross-package dependency is the required butler.
+        assert not [m for m in top if m.startswith("lsst.pipe.base")]
 
 
 def _merge_graphs() -> dict:

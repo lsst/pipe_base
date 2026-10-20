@@ -14,15 +14,15 @@ engine (``QuantumRuntimeTable.to_parquet``/``from_parquet``/
 ``QuantumRuntimeTable.from_parquets``), which serializes that layout with a
 self-describing metadata block.
 
-This module is the seam for moving runtime table functionality upstream to
-pipe_base: it depends only on the standard library, numpy, and pyarrow (an
-optional dependency of the pipe_base ``[runtime]`` extra, guarded at import
-time); ``ProvenanceQuantumGraph`` is imported
-lazily inside the functions that need it, and the data-ID string parser
-lives in the dependency-free :mod:`lsst.pipe.base._runtime_analyzer.dimensions`
-module (which imports nothing from here) and is likewise imported where
-used — nothing here imports the rest of ``runtime_analyzer`` at module
-level.
+This module's module-level dependencies are the standard library, numpy,
+pyarrow (an optional dependency of the pipe_base ``[runtime]`` extra,
+guarded at import time), ``lsst.daf.butler`` (a required pipe_base
+dependency), and relative intra-pipe_base imports
+(``automatic_connection_constants``, ``quantum_graph``);
+the graph -> table producers duck-type the pipe_base node objects they
+read, and the data-ID string parser lives in the dependency-free
+:mod:`lsst.pipe.base._runtime_analyzer.dimensions` module (which imports
+nothing from here) and is imported where used.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ __all__ = [
 
 import dataclasses
 import json
+import logging
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -57,6 +58,12 @@ except ImportError as exc:  # pragma: no cover
         "pipe_base with the [runtime] extra."
     ) from exc
 
+from lsst.daf.butler import CollectionType, DatasetNotFoundError
+
+from ..automatic_connection_constants import PROVENANCE_DATASET_TYPE_NAME
+from ..quantum_graph import ProvenanceQuantumGraph
+
+_LOG = logging.getLogger(__name__)
 
 # Width of the raw UUID byte string carried by every quantum row.
 _QUANTUM_ID_BYTES = 16
@@ -783,10 +790,9 @@ class QuantumRuntimeTable:
 # ---------------------------------------------------------------------------
 # Graph -> table extraction (producer side).  These functions duck-type the
 # pipe_base node objects (QuantumResourceUsage, QuantumAttemptStatus,
-# DataCoordinate) that they are designed to read, and `ProvenanceQuantumGraph`
-# itself is imported lazily — the module's only module-level third-party
-# dependencies are numpy and pyarrow (an optional [runtime]-extra
-# dependency, guarded at import).
+# DataCoordinate) that they are designed to read; the module's third-party
+# dependencies are numpy, pyarrow (an optional [runtime]-extra dependency,
+# guarded at import), and lsst.daf.butler (required by pipe_base).
 # ---------------------------------------------------------------------------
 
 # QuantumAttemptStatus member .value codes keyed by member name (the enum
@@ -1011,6 +1017,189 @@ def extract_runtime_table(qg: Any) -> QuantumRuntimeTable:
     )
 
 
+def _flatten_run_chain(butler: Any, chain: str) -> list[tuple[str, Any]]:
+    """Flatten a chained Butler collection into its leaf members.
+
+    Nested chains are flattened recursively (Butler guarantees chains are
+    acyclic; a ``seen`` guard makes cycles inert instead of looping).
+
+    Parameters
+    ----------
+    butler : `lsst.daf.butler.Butler`
+        Butler used for collection-type/children lookups.
+    chain : `str`
+        Name of the (possibly nested) ``CHAINED`` collection.
+
+    Returns
+    -------
+    leaves : `list` of ( `str`, `lsst.daf.butler.CollectionType` )
+        Leaf (non-chained) members in chain order: head first, which is
+        newest-first for chains as Butler builds them (new runs are
+        prepended).
+
+    Raises
+    ------
+    lsst.daf.butler.MissingCollectionError
+        Raised (propagated) if a chain member does not exist.
+    """
+    leaves: list[tuple[str, Any]] = []
+    seen: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in seen:
+            return
+        seen.add(name)
+        info = butler.collections.get_info(name)
+        if info.type is CollectionType.CHAINED:
+            for child in info.children:
+                visit(child)
+        else:
+            leaves.append((name, info.type))
+
+    visit(chain)
+    return leaves
+
+
+def _extract_butler_source_tables(
+    qg: Any,
+    butler: Any,
+    path: str,
+    collection: str,
+) -> tuple[list[QuantumRuntimeTable], str]:
+    """Extract the runtime tables contributed by one Butler source.
+
+    A non-chained collection contributes the find-first graph yielded by
+    ``ProvenanceQuantumGraph.from_args`` directly.  A ``CHAINED``
+    collection would otherwise silently load only its first (newest)
+    member's ``run_provenance`` (Butler ``get`` find-first semantics), so
+    it is expanded to its leaf members: the find-first graph is reused as
+    the table of the head-most member that has provenance (Butler
+    searches the chain in order, so it is that member's graph), and the
+    remaining contributors are loaded by dataset ref (pinned to their
+    exact dataset), head-first; the head-first first-wins merge then
+    matches the Butler chain search semantics.  Which members have
+    provenance is decided by one chain-wide dataset query (metadata
+    only), so no graph is deserialized twice.
+
+    Parameters
+    ----------
+    qg : `object`
+        The find-first graph yielded by ``from_args``; reused as the
+        head-most contributing leaf's table for chained collections.
+    butler : `lsst.daf.butler.Butler`
+        The Butler yielded by ``from_args``.
+    path : `str`
+        Butler repository path (used in the source descriptor).
+    collection : `str`
+        Butler collection name as requested by the user.
+
+    Returns
+    -------
+    tables : `list` of `QuantumRuntimeTable`
+        One table for a non-chained collection, or one table per
+        contributing leaf member of a chain, in chain order (head first).
+    descriptor : `str`
+        Self-describing source descriptor: ``"repo:collection"`` for a
+        non-chained collection, ``"repo:collection[m1,m2,...]"`` (the
+        flattened leaf members in order, a point-in-time snapshot of the
+        chain) for a chained collection.
+
+    Raises
+    ------
+    ValueError
+        Raised if a chained collection yields no tables (every member
+        is non-RUN, or no listed dataset can be loaded); the message
+        names the chain and every member tried.
+    lsst.daf.butler.MissingCollectionError
+        Raised (propagated) if the collection does not exist.
+    """
+    info = butler.collections.get_info(collection)
+    if info.type is not CollectionType.CHAINED:
+        return [extract_runtime_table(qg)], f"{path}:{collection}"
+
+    leaves = _flatten_run_chain(butler, collection)
+    run_leaves = []
+    for name, leaf_type in leaves:
+        if leaf_type is not CollectionType.RUN:
+            # Butler requires datasets to live in RUN collections, so a
+            # non-RUN member cannot hold provenance in the first place.
+            _LOG.warning(
+                "Chained collection %r: skipping non-RUN member %r.",
+                collection,
+                name,
+            )
+        else:
+            run_leaves.append(name)
+    if run_leaves:
+        _LOG.info(
+            "Collection %r is chained; loading run collections: %s",
+            collection,
+            ", ".join(run_leaves),
+        )
+    # One chain-wide query (metadata only, no deserialization) returns a
+    # ref per contributing member tagged with the RUN it lives in.  Its
+    # result ordering is NOT guaranteed to be chain priority (verified on
+    # this Butler version: it follows registry order), so precedence comes
+    # from the chain definition above; ``providers`` keeps chain order.
+    # Butler's find-first get searched the chain in order, so the graph
+    # already yielded is the head-most provider's: reuse it as that
+    # member's table and fetch only the remaining providers, loading each
+    # member's graph exactly once.  Fetching by ref pins each read to its
+    # exact dataset, and ``parameters`` keeps the payload identical to
+    # what ``from_args`` requests.
+    refs = {
+        ref.run: ref
+        for ref in butler.query_datasets(
+            PROVENANCE_DATASET_TYPE_NAME,
+            collections=[collection],
+            find_first=False,
+            explain=False,
+            limit=None,
+        )
+    }
+    providers = []
+    for name in run_leaves:
+        if name in refs:
+            providers.append(name)
+        else:
+            _LOG.warning(
+                "Chained collection %r: member %r has no run provenance.",
+                collection,
+                name,
+            )
+    tables: list[QuantumRuntimeTable] = []
+    for index, name in enumerate(providers):
+        if index == 0:
+            tables.append(extract_runtime_table(qg))
+            continue
+        try:
+            leaf_graph = butler.get(
+                refs[name],
+                parameters={"quanta": None, "datasets": ()},
+            )
+        except DatasetNotFoundError:
+            # The query said one existed; trust the get and skip.
+            _LOG.warning(
+                "Chained collection %r: member %r has no run provenance.",
+                collection,
+                name,
+            )
+            continue
+        tables.append(extract_runtime_table(leaf_graph))
+
+    if not tables:
+        raise ValueError(
+            f"Chained collection {collection!r} in {path!r} yielded no "
+            f"run provenance; members tried: "
+            f"{', '.join(f'{name!r}' for name, _ in leaves) or '(none)'}."
+        )
+    descriptor = (
+        f"{path}:{collection}"
+        f"[{','.join(name for name, _ in leaves)}]"
+    )
+    return tables, descriptor
+
+
 def extract_merged_runtime_table(
     sources: list[tuple[str, str | None]],
 ) -> QuantumRuntimeTable:
@@ -1025,6 +1214,12 @@ def extract_merged_runtime_table(
     and quanta unique to later sources are included.  Exactly one source
     takes a fast path that skips the merge machinery entirely.
 
+    A Butler source naming a ``CHAINED`` collection is expanded to its
+    leaf members (see :func:`_extract_butler_source_tables`): the leaves
+    are loaded head-first and enter the merge in that order, so the
+    newest member wins overlapping quanta, matching Butler chain search
+    semantics.
+
     Parameters
     ----------
     sources : `list` of `(str, str or None)`
@@ -1038,40 +1233,71 @@ def extract_merged_runtime_table(
     table : `QuantumRuntimeTable`
         Merged table with the combined dimension view (captured per winner
         row in the ``dims`` column), ``n_sources`` equal to
-        ``len(sources)``, and ``sources`` set to the source paths.
-        ``n_expected`` is the header count for a single source, and ``0``
-        when merging multiple sources, whose header sums would
-        double-count shared quanta.
+        ``len(sources)``, and ``sources`` one self-describing descriptor
+        per entry, parallel to ``sources``: file entries render as the
+        path, plain Butler entries as ``"repo:collection"``, and chained
+        Butler entries as ``"repo:collection[m1,m2,...]"`` with the
+        resolved members (a point-in-time snapshot, since chains change
+        over time).  ``n_expected`` is the header count for a single
+        source, and ``0`` when merging multiple sources (or the multiple
+        leaves of one chain), whose header sums would double-count shared
+        quanta.
+
+    Raises
+    ------
+    lsst.daf.butler.DatasetNotFoundError
+        Raised if a Butler collection (chained or not) holds no
+        ``run_provenance`` dataset anywhere; the message names the
+        repository and the collection as requested (the raw butler
+        error does not).
+    ValueError
+        Raised if a chained Butler collection has only non-RUN members
+        (see :func:`_extract_butler_source_tables`).
+    lsst.daf.butler.MissingCollectionError
+        Raised (propagated) if a requested Butler collection does not
+        exist.
     """
-    from lsst.pipe.base.quantum_graph import ProvenanceQuantumGraph
-
-    if len(sources) == 1:
-        # Single source: no merging to do; stamp the source path onto the
-        # freshly extracted table.
-        path, collection = sources[0]
-        with ProvenanceQuantumGraph.from_args(
-            path, collection=collection, datasets=()
-        ) as (
-            qg,
-            _butler,
-        ):
-            table = extract_runtime_table(qg)
-        return dataclasses.replace(table, sources=(str(path),))
-
     tables: list[QuantumRuntimeTable] = []
+    descriptors: list[str] = []
     for path, collection in sources:
-        with ProvenanceQuantumGraph.from_args(
-            path, collection=collection, datasets=()
-        ) as (
-            qg,
-            _butler,
-        ):
-            tables.append(extract_runtime_table(qg))
+        try:
+            with ProvenanceQuantumGraph.from_args(
+                path, collection=collection, datasets=()
+            ) as (
+                qg,
+                butler,
+            ):
+                if butler is None or collection is None:
+                    source_tables = [extract_runtime_table(qg)]
+                    descriptor = str(path)
+                else:
+                    source_tables, descriptor = _extract_butler_source_tables(
+                        qg, butler, path, collection
+                    )
+        except DatasetNotFoundError as err:
+            # ``from_args`` does its own find-first ``get`` before
+            # yielding: the requested collection (or, if it is chained,
+            # none of its members) holds no run_provenance dataset.
+            # Report the source the user asked for instead of the raw
+            # butler error, which does not name it.
+            raise DatasetNotFoundError(
+                f"No run_provenance datasets in repo {path!r} for "
+                f"collection {collection!r}; if it is a chained "
+                "collection, none of its members hold run provenance."
+            ) from err
+        tables.extend(source_tables)
+        descriptors.append(descriptor)
+
+    if len(sources) == 1 and len(tables) == 1:
+        # Single source (or single-leaf chain): no merging to do; stamp
+        # the source descriptor onto the freshly extracted table.
+        return dataclasses.replace(tables[0], sources=(descriptors[0],))
 
     # Header counts are not summed across sources: the sum would
     # double-count quanta shared between sources, so merged multi-source
     # tables report ``n_expected=0`` (the merge default).
     return QuantumRuntimeTable.merge_first_wins(
         *tables,
-        sources=tuple(str(path) for path, _ in sources),
+        n_sources=len(sources),
+        sources=tuple(descriptors),
     )

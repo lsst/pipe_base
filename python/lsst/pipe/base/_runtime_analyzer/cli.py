@@ -276,12 +276,12 @@ def _load_ordered(
                     f"Failed to load graph sources: {err}"
                 ) from err
 
-    # Mixed loads pass sources=() on purpose: per-entry producers would
-    # stamp butler entries as bare repo labels (no collection), so the
-    # cache metadata labels are supplied explicitly by _save_cache
-    # instead of guessing here.
+    # Each per-entry producer stamps exactly one source descriptor
+    # (resolved chain members included), so the merged table's sources
+    # stay parallel to the entries; _save_cache prefers them over its
+    # display labels when the lengths line up.
     merged = QuantumRuntimeTable.merge_first_wins(
-        *tables, n_sources=len(sources), sources=(),
+        *tables, n_sources=len(sources),
     )
     return QuantumRuntimeAnalyzer(merged)
 
@@ -300,6 +300,11 @@ def _save_cache(
     returned so callers (``preprocess``) can reuse it for their own echo
     with a single pass over the data.
 
+    The metadata records the loader's resolved source descriptors (which
+    snapshot a chained collection's members) whenever they are present
+    and parallel to ``labels``; display labels are the fallback for
+    loaders that carry no per-entry descriptors.
+
     Parameters
     ----------
     analyzer : `QuantumRuntimeAnalyzer`
@@ -307,7 +312,8 @@ def _save_cache(
     path : `str`
         Destination Parquet cache path.
     labels : `list` of `str`
-        Source labels recorded in the file metadata.
+        Source labels used when the loaded table carries no resolved
+        descriptors of its own.
 
     Returns
     -------
@@ -317,9 +323,16 @@ def _save_cache(
         Number of rows written.
     """
     fingerprint = hash_graph(analyzer)
-    n_rows = analyzer.as_table().to_parquet(
+    table = analyzer.as_table()
+    resolved = table.sources
+    sources = (
+        list(resolved)
+        if resolved and len(resolved) == len(labels)
+        else labels
+    )
+    n_rows = table.to_parquet(
         path,
-        sources=labels,
+        sources=sources,
         fingerprint=fingerprint,
     )
 
@@ -1001,9 +1014,11 @@ def preprocess(ctx: click.Context, graph: tuple[str, ...], output: str) -> None:
     schema version, runtime_analyzer version, sources, row count, creation
     timestamp, and a run fingerprint).
 
-    The metadata ``sources`` lists the ordered source labels: the file
-    path for graph/table entries and ``"repo:collection"`` for Butler
-    entries.
+    The metadata ``sources`` lists the ordered source descriptors: the
+    file path for graph/table entries and ``"repo:collection"`` for
+    plain Butler entries; a chained Butler collection snapshots its
+    resolved members as ``"repo:chain[m1,m2,...]"`` (chains change over
+    time, so the cache stays self-describing).
 
     When the inputs are already cached tables this re-writes/merges them
     into a single compact cache (first-wins precedence).  Subsequent
@@ -1134,7 +1149,9 @@ def tracked_run_record(ctx: click.Context, label: str, graph: tuple[str, ...],
     The recorded ``repo``/``collection`` columns hold the FIRST ``butler``
     entry of the effective ordered source list (multiple butler sources
     record the first); runs loaded with no Butler source record ``None``
-    for both.
+    for both.  The ``collection`` records the loader's resolved descriptor
+    for that entry: a chained collection snapshots its members as
+    ``chain[m1,m2,...]``, a plain run collection records its name as-is.
     """
     import time
 
@@ -1187,7 +1204,6 @@ def tracked_run_record(ctx: click.Context, label: str, graph: tuple[str, ...],
 
     run_id = f"{label}_{int(time.time() * 1000)}"
     from lsst.pipe.base.version import __version__
-    analyzer_version = __version__
 
     # Get raw quanta data if requested
     raw_data = None
@@ -1218,17 +1234,30 @@ def tracked_run_record(ctx: click.Context, label: str, graph: tuple[str, ...],
         ]
 
     # Record run.  repo/collection come from the FIRST butler entry of the
-    # effective ordered source list; no butler entry -> None/None.
-    butler = [s for s in sources if s[0] == 'butler']
-    repo = butler[0][1] if butler else None
-    collection_str = butler[0][2] if butler else None
+    # effective ordered source list; no butler entry -> None/None.  The
+    # collection prefers the loader's resolved descriptor for that entry
+    # (a chained collection snapshots its members as "chain[m1,m2,...]"),
+    # falling back to the requested name when the load recorded no
+    # parallel descriptors.
+    first_butler = next((
+        (i, s) for i, s in enumerate(sources) if s[0] == 'butler'
+    ), None)
+    repo = collection_str = None
+    if first_butler is not None:
+        index, entry = first_butler
+        repo, collection_str = entry[1], entry[2]
+        resolved = analyzer.table.sources
+        if resolved and len(resolved) == len(sources):
+            prefix = f"{repo}:"
+            if resolved[index].startswith(prefix):
+                collection_str = resolved[index][len(prefix):]
     result = record_run(
         label=label,
         run_id=run_id,
         repo=repo,
         collection=collection_str,
         graph_hash=graph_hash,
-        analyzer_version=analyzer_version,
+        analyzer_version=__version__,
         summary_table=summary,
         raw_quanta_data=raw_data,
     )

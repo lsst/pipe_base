@@ -31,8 +31,20 @@ import pytest
 
 import lsst.pipe.base as pb
 import lsst.pipe.base.connectionTypes as cT
-from lsst.daf.butler import DataCoordinate
+from lsst.daf.butler import (
+    Butler,
+    CollectionType,
+    DataCoordinate,
+    DatasetNotFoundError,
+    DatasetRef,
+    DatasetType,
+    FileDataset,
+)
 from lsst.pipe.base import QuantumAttemptStatus, QuantumGraph
+from lsst.pipe.base.automatic_connection_constants import (
+    PROVENANCE_DATASET_TYPE_NAME,
+    PROVENANCE_STORAGE_CLASS,
+)
 from lsst.pipe.base.log_on_close import LogOnClose
 from lsst.pipe.base.quantum_graph import (
     ProvenanceQuantumGraph,
@@ -46,6 +58,7 @@ from lsst.pipe.base.quantum_graph._provenance import (
     ProvenanceQuantumScanData,
     ProvenanceQuantumScanStatus,
 )
+from lsst.pipe.base.quantum_graph.formatter import ProvenanceFormatter
 from lsst.pipe.base.resource_usage import QuantumResourceUsage
 
 # ``simpleQGraph`` pulls in daf_butler's CLI test utilities, which import
@@ -557,3 +570,246 @@ def test_writer_reader_round_trip_dimension_dist():
         for table in dists.values():
             assert {str(k) for k in table["group_key"]} == {"0"}
             assert table["quanta"][0] == 1
+
+
+# --------------------------------------------------------------------------
+# Real Butler repository with CHAINED collections: no mocks anywhere.
+#
+# ``extract_merged_runtime_table`` must flatten a CHAINED collection,
+# identify provenance-bearing RUN leaves by registry metadata (skipping
+# the others with a warning), load each contributing leaf's graph exactly
+# once, merge with first-wins precedence (head member beats tail members
+# on shared (task_label, data_id) keys), and describe the source as
+# ``"repo:chain[m1,m2,...]"``.  A chain with no provenance anywhere -- or
+# a plain empty RUN -- raises ``DatasetNotFoundError`` naming the repo and
+# collection the user requested.
+# --------------------------------------------------------------------------
+
+_NEW_RUN_SEED = {
+    "task0": (QuantumAttemptStatus.SUCCESSFUL, 10.0, 100.0),
+    "task1": (QuantumAttemptStatus.SUCCESSFUL, 20.0, 200.0),
+}
+_OLD_RUN_SEED = {
+    "task0": (QuantumAttemptStatus.SUCCESSFUL, 100.0, 1000.0),
+    "task1": (QuantumAttemptStatus.SUCCESSFUL, 200.0, 2000.0),
+    "task2": (QuantumAttemptStatus.SUCCESSFUL, 300.0, 3000.0),
+}
+
+
+def _make_run_graph_file(root: str, run: str, seed: dict) -> str:
+    """Write a real provenance graph file for ``run`` via simpleQGraph.
+
+    Mirrors :func:`_write_provenance_roundtrip`, but names the output run
+    (so the graph header carries ``output_run=run``) and seeds one
+    ``(status, run_time, memory_MiB)`` triple per task label.
+    """
+    _butler, old_qg = simpleQGraph.makeSimpleQGraph(
+        root=root, nQuanta=len(seed), run=run
+    )
+    components = PredictedQuantumGraphComponents.from_old_quantum_graph(old_qg)
+    assert len(components.quantum_datasets) == len(seed)
+
+    prov_path = os.path.join(root, "provenance.qg")
+    with ExitStack() as stack:
+        writer = ProvenanceQuantumGraphWriter(
+            prov_path,
+            exit_stack=stack,
+            log_on_close=LogOnClose(logging.getLogger("integration").log),
+            predicted=components,
+        )
+        writer.write_overall_inputs()
+        writer.write_packages()
+        writer.write_init_outputs(assume_existence=True)
+        for quantum_id, predicted in components.quantum_datasets.items():
+            status, rt, mem = seed[predicted.task_label]
+            model = ProvenanceQuantumModel.from_predicted(predicted)
+            model.attempts = [
+                ProvenanceQuantumAttemptModel(attempt=0, status=status, resource_usage=_usage(rt, mem)),
+            ]
+            existing = {ref.dataset_id for refs in predicted.outputs.values() for ref in refs}
+            writer.write_scan_data(
+                ProvenanceQuantumScanData(
+                    quantum_id,
+                    status=ProvenanceQuantumScanStatus.SUCCESSFUL,
+                    existing_outputs=existing,
+                    quantum=model.model_dump_json().encode(),
+                )
+            )
+    return prov_path
+
+
+def _ingest_run_provenance(repo_path: str, run: str, prov_path: str) -> None:
+    """Ingest a graph file as ``run_provenance`` in RUN collection ``run``.
+
+    Mirrors ``_GraphIngester.ingest_graph_dataset`` (the write path
+    ``ingest_graph`` uses for the graph dataset itself).
+    """
+    with Butler(repo_path, writeable=True) as butler:
+        butler.collections.register(run, CollectionType.RUN)
+        dataset_type = DatasetType(
+            PROVENANCE_DATASET_TYPE_NAME,
+            butler.dimensions.empty,
+            PROVENANCE_STORAGE_CLASS,
+        )
+        butler.registry.registerDatasetType(dataset_type)
+        ref = DatasetRef(
+            dataset_type, DataCoordinate.make_empty(butler.dimensions), run=run
+        )
+        butler.ingest(
+            FileDataset(refs=[ref], path=prov_path, formatter=ProvenanceFormatter),
+            transfer="copy",
+        )
+
+
+def _make_chain(repo_path: str, chain: str, members: list[str]) -> None:
+    """Register CHAINED collection ``chain`` with ``members`` head-first."""
+    with Butler(repo_path, writeable=True) as butler:
+        butler.collections.register(chain, CollectionType.CHAINED)
+        butler.collections.extend_chain(chain, members)
+
+
+def _register_provenance_type(repo_path: str) -> None:
+    """Register the ``run_provenance`` dataset type without writing any
+    datasets (the state a repo is in before a run's provenance is
+    ingested).
+    """
+    with Butler(repo_path, writeable=True) as butler:
+        butler.registry.registerDatasetType(
+            DatasetType(
+                PROVENANCE_DATASET_TYPE_NAME,
+                butler.dimensions.empty,
+                PROVENANCE_STORAGE_CLASS,
+            )
+        )
+
+
+def _rows_by_key(table) -> dict:
+    """``(task_label, data_id) -> (run_time, memory)`` from a runtime table."""
+    return {
+        (row["task_label"], row["data_id"]): (row["run_time"], row["memory"])
+        for row in table.to_arrow().to_pylist()
+    }
+
+
+class TestRealButlerChainedCollections:
+    """CHAINED Butler collection handling against a real file-based repo."""
+
+    @staticmethod
+    def _make_repo(tmp_path) -> str:
+        """Create a real repo and ingest two provenance runs into it."""
+        repo_path = str(tmp_path / "repo")
+        Butler.makeRepo(repo_path)
+        for run, seed in (("new_run", _NEW_RUN_SEED), ("old_run", _OLD_RUN_SEED)):
+            gen_root = tmp_path / f"gen_{run}"
+            gen_root.mkdir()
+            prov_path = _make_run_graph_file(str(gen_root), run, seed)
+            _ingest_run_provenance(repo_path, run, prov_path)
+        return repo_path
+
+    def test_chain_merges_head_first(self, tmp_path) -> None:
+        """A real chain loads every RUN leaf head-first; the head member
+        wins overlapping quanta and the source descriptor snapshots the
+        flattened members.
+        """
+        repo_path = self._make_repo(tmp_path)
+        _make_chain(repo_path, "chain", ["new_run", "old_run"])
+
+        # Plain (non-chained) RUN sources keep the simple path on a real
+        # repo, and provide the per-run ground truth for the merge.
+        new_only = extract_merged_runtime_table([(repo_path, "new_run")])
+        old_only = extract_merged_runtime_table([(repo_path, "old_run")])
+        assert new_only.sources == (f"{repo_path}:new_run",)
+        assert old_only.sources == (f"{repo_path}:old_run",)
+        new_rows = _rows_by_key(new_only)
+        old_rows = _rows_by_key(old_only)
+        assert {task for task, _ in new_rows} == {"task0", "task1"}
+        assert {task for task, _ in old_rows} == {"task0", "task1", "task2"}
+
+        # The two real graphs overlap on (task_label, formatted data_id)
+        # exactly on their shared task labels (same pipeline, same
+        # detector value).
+        overlap = set(new_rows) & set(old_rows)
+        assert {task for task, _ in overlap} == {"task0", "task1"}
+        tail_only = set(old_rows) - set(new_rows)
+        assert {task for task, _ in tail_only} == {"task2"}
+
+        table = extract_merged_runtime_table([(repo_path, "chain")])
+
+        # One descriptor for the one user source, listing every flattened
+        # member in chain order (head first).
+        assert table.sources == (f"{repo_path}:chain[new_run,old_run]",)
+        assert table.n_sources == 1
+        # Multiple contributing leaves: header counts are not summed.
+        assert table.n_expected == 0
+
+        merged = _rows_by_key(table)
+        assert set(merged) == set(new_rows) | set(old_rows)
+        for key in overlap:
+            # Head (new_run) wins the shared (task_label, data_id) rows.
+            assert merged[key] == pytest.approx(new_rows[key])
+        for key in tail_only:
+            # Quanta unique to the tail member are still included.
+            assert merged[key] == pytest.approx(old_rows[key])
+
+    def test_chain_skips_member_without_provenance(self, tmp_path) -> None:
+        """A chain member whose real ``get`` raises ``DatasetNotFoundError``
+        is skipped with a warning; the remaining members still load.
+        """
+        repo_path = self._make_repo(tmp_path)
+        with Butler(repo_path, writeable=True) as butler:
+            butler.collections.register("gap_run", CollectionType.RUN)
+        _make_chain(repo_path, "gap_chain", ["gap_run", "old_run"])
+
+        old_only = extract_merged_runtime_table([(repo_path, "old_run")])
+        table = extract_merged_runtime_table([(repo_path, "gap_chain")])
+
+        # The empty head member is tried (and named in the snapshot), but
+        # only old_run contributes.
+        assert table.sources == (f"{repo_path}:gap_chain[gap_run,old_run]",)
+        assert table.n_sources == 1
+        # Exactly one contributing leaf: the single-source fast path
+        # survives, so the leaf's header count is kept.
+        assert table.n_expected == old_only.n_expected == 3
+        merged = _rows_by_key(table)
+        expected = _rows_by_key(old_only)
+        assert set(merged) == set(expected)
+        for key, value in expected.items():
+            assert merged[key] == pytest.approx(value)
+
+    def test_chain_without_any_provenance_raises(self, tmp_path) -> None:
+        """A chain whose every member lacks ``run_provenance`` raises
+        ``DatasetNotFoundError`` naming the repo and the chain the user
+        requested (the real find-first miss inside ``from_args``, given a
+        clearer message than raw butler's).
+        """
+        repo_path = str(tmp_path / "repo")
+        Butler.makeRepo(repo_path)
+        _register_provenance_type(repo_path)
+        with Butler(repo_path, writeable=True) as butler:
+            butler.collections.register("empty1", CollectionType.RUN)
+            butler.collections.register("empty2", CollectionType.RUN)
+        _make_chain(repo_path, "empty_chain", ["empty1", "empty2"])
+
+        with pytest.raises(DatasetNotFoundError) as excinfo:
+            extract_merged_runtime_table([(repo_path, "empty_chain")])
+
+        message = str(excinfo.value)
+        assert f"{repo_path!r}" in message
+        assert "'empty_chain'" in message
+        assert "chained" in message
+        assert isinstance(excinfo.value.__cause__, DatasetNotFoundError)
+
+    def test_empty_run_collection_still_raises_dataset_not_found(
+        self, tmp_path
+    ) -> None:
+        """An empty plain RUN collection keeps the unchanged
+        ``DatasetNotFoundError`` behavior (no chain wrapping).
+        """
+        repo_path = str(tmp_path / "repo")
+        Butler.makeRepo(repo_path)
+        _register_provenance_type(repo_path)
+        with Butler(repo_path, writeable=True) as butler:
+            butler.collections.register("empty_run", CollectionType.RUN)
+
+        with pytest.raises(DatasetNotFoundError):
+            extract_merged_runtime_table([(repo_path, "empty_run")])

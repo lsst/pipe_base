@@ -74,6 +74,11 @@ Where two sources provide the same ``(task_label, data_id)`` row, the earlier on
 Each ``--collection`` applies to the closest preceding ``--repo``, and a repository stays open across intervening ``--graph`` and ``--table`` entries, so ``--repo R1 --collection A --graph g.qg --repo R2 --collection B`` yields ``R1:A``, ``g.qg``, and ``R2:B`` in that order.
 A ``--collection`` with no preceding ``--repo`` is rejected at parse time.
 
+A ``--collection`` may name a `~lsst.daf.butler.CollectionType.CHAINED` collection.
+Chained collections hold no provenance graph of their own, so the analyzer expands the chain (flattening nested chains) and loads the ``run_provenance`` graph from every RUN member, in chain order.
+Chains are built by prepending new runs, so the head member is the newest; with the earlier-sources-win merge, the newest member wins any quantum that appears in more than one member.
+Members that are not RUN collections, or that lack a provenance graph, are skipped with a warning; a chain whose every member lacks one is an error.
+
 .. code-block:: bash
 
     # Graph, Butler collection, and cached table, merged in the given order
@@ -174,7 +179,9 @@ Several caches merge into one file with ``preprocess -o merged.parquet a.parquet
 
 A cache reflects its source as of the time it was written.
 If you re-run the collection or graph file behind a cache, the cache no longer matches it, and you should regenerate it with ``preprocess``.
+The same applies to a cache built from a chained collection: runs are added to chains over time, so the cache reflects only the members present when it was written.
 Each cache records metadata with the schema and analyzer versions, the sources, the row count, the creation time, and a fingerprint.
+The ``sources`` entry names each source as loaded: ``repo:collection`` for a plain collection, or ``repo:chain[m1,m2,...]`` for a chained one, snapshotting the members that went into the cache.
 The metadata can be read without loading the data:
 
 .. code-block:: bash
@@ -232,6 +239,8 @@ Relative ``db_path`` values resolve against the current working directory.
     # Report significant changes (optionally --task, --since, or --metric)
     runtime-analyzer tracked-run alerts --task calibrate
 
+A recorded run stores the collection it came from.
+When the source was a chained collection, the recorded value snapshots the members at record time as ``chain[m1,m2,...]``, so a comparison stays interpretable after the chain is later edited.
 Recording prints a comparison with the most recent comparable recorded run, so you see straight away whether the new run looks different.
 The comparison table lists, per task, the old and new values of the metric, the percentage change (``delta_pct``, with an ↑ or ↓ arrow), Cohen's d, and a status: ``significant`` when p < 0.05 and the absolute Cohen's d exceeds 0.3, ``stable`` when the effect size is trivial (below 0.2), and ``uncertain`` otherwise.
 Tasks present in only one of the runs are listed separately.

@@ -34,12 +34,14 @@ import pytest
 
 pytest.importorskip("pyarrow")  # provided by the [runtime] extra
 
+from lsst.daf.butler import CollectionType, MissingCollectionError  # noqa: E402
 from lsst.pipe.base._runtime_analyzer.core import QuantumRuntimeAnalyzer  # noqa: E402
 from lsst.pipe.base._runtime_analyzer.runtime_table import (  # noqa: E402
     STATUS_MAP,
     QuantumRuntimeTable,
 )
 from lsst.pipe.base._runtime_analyzer.tracker.database import record_run  # noqa: E402
+from lsst.pipe.base.quantum_graph import ProvenanceQuantumGraph  # noqa: E402
 from lsst.pipe.base.resource_usage import QuantumResourceUsage  # noqa: E402
 
 # Reference instant and MiB factor used by ``real_usage`` (mirrors the
@@ -411,20 +413,34 @@ def boom(*args: Any, **kwargs: Any) -> None:
     )
 
 
+def dep_present(name: str) -> bool:
+    """Return True if a module can actually be imported."""
+    try:
+        __import__(name)
+    except ImportError:
+        return False
+    return True
+
+
 def fake_from_args(
     node_map: dict[str, list[tuple]],
     *,
     header_task: str | None = None,
     calls: list[dict] | None = None,
+    butlers: dict[str, Any] | None = None,
 ) -> Callable:
     """Build a ``ProvenanceQuantumGraph.from_args`` stand-in.
 
     ``node_map`` maps a source string (path, or ``"repo:collection"``
     for Butler entries) to the node tuples that source yields; the
     stack-context yields ``(qg, butler)`` exactly like the real
-    ``from_args``.  ``header_task`` sets
+    ``from_args``.  An ``Exception`` value in ``node_map`` is raised
+    during context entry, simulating the find-first ``get`` the real
+    ``from_args`` performs before yielding.  ``header_task`` sets
     ``n_task_quanta={header_task: len(nodes)}``; ``calls`` records
-    ``{"path", "collection", "datasets"}`` per invocation.
+    ``{"path", "collection", "datasets"}`` per invocation; ``butlers``
+    (keyed like ``node_map``) overrides the yielded butler for those
+    keys, defaulting to a bare ``mock.Mock()`` elsewhere.
     """
 
     @contextmanager
@@ -435,6 +451,10 @@ def fake_from_args(
             calls.append({"path": path, "collection": collection,
                           "datasets": datasets})
         nodes = node_map[key]
+        if isinstance(nodes, Exception):
+            # Simulate the find-first ``get`` inside the real from_args
+            # failing (e.g. no run_provenance anywhere).
+            raise nodes
         xg = mock.Mock()
         xg.nodes = mock.MagicMock(side_effect=lambda **kw: iter(nodes))
         qg = mock.Mock()
@@ -442,19 +462,159 @@ def fake_from_args(
         if header_task is not None:
             qg.header = mock.Mock()
             qg.header.n_task_quanta = {header_task: len(nodes)}
-        yield qg, mock.Mock()
+        butler = butlers.get(key, mock.Mock()) if butlers else mock.Mock()
+        yield qg, butler
 
     return _from_args
+
+
+def make_fake_butler(
+    runs: dict[str, Any],
+    chains: dict[str, Sequence[str]] | None = None,
+    non_run: dict[str, Any] | None = None,
+) -> mock.Mock:
+    """Build a Butler stand-in with chain-aware collections.
+
+    ``runs`` maps a RUN collection name to the graph object its
+    ``run_provenance`` dataset returns (an ``Exception`` instance is
+    raised by ``get`` instead); ``chains`` maps a CHAINED collection
+    name to its ordered child names (which may name other chains);
+    ``non_run`` maps names to a non-RUN, non-CHAINED ``CollectionType``
+    (e.g. TAGGED).  Anything else raises ``MissingCollectionError`` from
+    ``get_info``.
+
+    ``butler.get`` answers for the single collection passed via its
+    ``collections=`` keyword (the real supported narrowing mechanism);
+    it appends the leaf name to ``butler.loaded`` and a
+    ``(leaf, dataset_type, parameters)`` tuple to ``butler.gets`` in
+    call order, letting tests assert per-leaf load order and arguments.
+    ``butler.query_datasets`` (the metadata probe) records the queried
+    collection expression to ``butler.queries``, expands chains to their
+    RUN members, and answers with refs (tagged ``.run`` and
+    ``.dataset_type``) for members that have a graph; a member whose
+    value is an ``Exception`` contributes no ref.  ``butler.get`` answers
+    either a ref (pinned to its ``.run``) or a ``collections=``
+    narrowing.
+    """
+    chains = chains or {}
+    non_run = non_run or {}
+    butler = mock.Mock()
+    butler.loaded = []
+    butler.queries: list[str] = []
+    butler.gets: list[tuple[str, Any, Any]] = []
+
+    def get_info(name: str) -> mock.Mock:
+        info = mock.Mock()
+        info.name = name
+        if name in chains:
+            info.type = CollectionType.CHAINED
+            info.children = tuple(chains[name])
+        elif name in runs:
+            info.type = CollectionType.RUN
+        elif name in non_run:
+            info.type = non_run[name]
+        else:
+            raise MissingCollectionError(f"No such collection: {name}")
+        return info
+
+    def get(dataset_type: Any, dataId: Any = None,
+            collections: Sequence[str] | None = None,
+            parameters: Any = None, **kwargs: Any) -> Any:
+        ref_run = getattr(dataset_type, "run", None)
+        if ref_run is not None:  # get by ref pins the run
+            leaf = str(ref_run)
+            dataset_type = getattr(dataset_type, "dataset_type",
+                                   dataset_type)
+        else:
+            assert collections is not None and len(collections) == 1, (
+                "butler.get requires a ref or a single collections= "
+                "narrowing"
+            )
+            leaf = str(collections[0])
+        butler.loaded.append(leaf)
+        butler.gets.append((leaf, dataset_type, parameters))
+        result = runs[leaf]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def resolve_runs(expression: str) -> list[str]:
+        if expression in runs:
+            return [expression]
+        if expression in chains:
+            return [
+                leaf
+                for leaf in _flatten(expression)
+                if leaf in runs
+            ]
+        get_info(expression)  # raises MissingCollectionError
+        return []
+
+    def _flatten(chain: str) -> list[str]:
+        out: list[str] = []
+        for child in chains[chain]:
+            out.extend(_flatten(child) if child in chains else [child])
+        return out
+
+    def query_datasets(dataset_type: Any,
+                       collections: Sequence[str] | None = None,
+                       **kwargs: Any) -> list[Any]:
+        assert collections is not None and len(collections) == 1, (
+            "query_datasets requires a single collections= narrowing"
+        )
+        expression = str(collections[0])
+        butler.queries.append(expression)
+        refs = []
+        for leaf in resolve_runs(expression):
+            if isinstance(runs[leaf], Exception):
+                continue
+            ref = mock.Mock()
+            ref.run = leaf
+            ref.dataset_type = str(dataset_type)
+            refs.append(ref)
+        return refs
+
+    butler.collections.get_info = get_info
+    butler.get = get
+    butler.query_datasets = query_datasets
+    return butler
+
+
+def fake_chain_graphs(
+    leaves: dict[str, list[tuple] | Exception],
+) -> dict[str, mock.Mock | Exception]:
+    """Map leaf run names to mock graphs over ``make_qg`` node tuples.
+
+    Each leaf's value is the list of ``(quantum_id, node_data)`` tuples
+    its ``run_provenance`` graph exposes; the graphs share no objects so
+    per-leaf row identity stays attributable.  An ``Exception`` value is
+    passed through unchanged, so a :func:`make_fake_butler` raises it
+    from ``get`` for that leaf (a member lacking ``run_provenance``).
+    """
+    return {
+        leaf: (
+            nodes
+            if isinstance(nodes, Exception)
+            else make_qg({"TaskT": [
+                {
+                    "id": qid,
+                    "status": node["status"],
+                    "data_id": node["data_id"],
+                    "resource_usage": node["resource_usage"],
+                }
+                for qid, node in nodes
+            ]})
+        )
+        for leaf, nodes in leaves.items()
+    }
 
 
 def override_graph_loader(node_map: dict[str, list[tuple]]) -> mock._patch:
     """Patch ``ProvenanceQuantumGraph.from_args`` with ``node_map``.
 
-    ``extract_merged_runtime_table`` imports ``ProvenanceQuantumGraph``
-    lazily, so patching the class attribute is required.
+    ``extract_merged_runtime_table`` resolves the loader at call time,
+    so patching the class attribute takes effect.
     """
-    from lsst.pipe.base.quantum_graph import ProvenanceQuantumGraph
-
     return mock.patch.object(
         ProvenanceQuantumGraph, 'from_args',
         side_effect=fake_from_args(node_map),
