@@ -81,7 +81,7 @@ zip-safe = true
 
 [tool.setuptools.package-data]
 "lsst.pipe.base" = ["py.typed", "cli/resources.yaml"]
-"lsst.pipe.base._runtime_analyzer" = ["py.typed"]
+"lsst.pipe.base._resource_usage_analyzer" = ["py.typed"]
 
 [tool.setuptools.dynamic]
 version = { attr = "lsst_versions.get_lsst_version" }

@@ -71,13 +71,13 @@ Running Pipelines
 
 .. _lsst-pipe-base-analyzing-runs:
 
-Runtime Analysis
-----------------
+Resource Usage Analysis
+-----------------------
 
 .. toctree::
    :maxdepth: 1
 
-   runtime-analyzer.rst
+   resource-usage-analyzer.rst
 
 .. _lsst.pipe.base-contributing:
 
