@@ -1,3 +1,31 @@
+lsst-pipe-base v30.0.12 (2026-10-27)
+====================================
+
+New Features
+------------
+
+- Improved ``provenance-report`` CLI command.
+
+  Added support for a ``--format`` option flag to choose between default ``table`` output and a new ``json`` output format.
+
+  When JSON output is requested, the table output is serialized to JSON.
+  In this JSON output, each table row is a dict of column-values.
+  In this mode, Caveat codes are expanded into an array of JSON objects with ``token``, ``code``, and ``count`` keys.
+  The JSON output includes a ``legend`` object to assist in documenting the Caveat codes.
+
+  The table output is improved by printing a legend for the Caveat codes. (`DM-55803 <https://rubinobs.atlassian.net/browse/DM-55803>`_)
+
+
+Bug Fixes
+---------
+
+- Improved previously-incomplete guards against zstandard compression dictionary training failures in ``butler aggregate-graph``.
+
+  Dictionary training can fail if the sample count is too small, not just if the total sample size is too large. (`DM-55525 <https://rubinobs.atlassian.net/browse/DM-55525>`_)
+- Fixed pipeline graph visualizations so that prerequisite inputs are no longer merged with regular inputs and edges from merged prerequisite inputs are drawn dashed.
+  Mermaid output now also draws prerequisite edges dashed for unresolved pipeline graphs. (`DM-56547 <https://rubinobs.atlassian.net/browse/DM-56547>`_)
+
+
 lsst-pipe-base v30.0.11 (2026-08-13)
 ====================================
 
